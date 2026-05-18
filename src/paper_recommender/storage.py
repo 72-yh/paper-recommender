@@ -41,16 +41,8 @@ CREATE TABLE IF NOT EXISTS preview_cache (
 """
 
 
-class _StorageConnection(sqlite3.Connection):
-    def execute(self, sql: str, parameters: Any = (), /) -> sqlite3.Cursor:
-        cursor = super().execute(sql, parameters)
-        if sql.lstrip().upper().startswith("SELECT") and "FROM index_deletes" in sql:
-            cursor.row_factory = None
-        return cursor
-
-
 def connect_db(path: str | Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(path, factory=_StorageConnection)
+    conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -151,6 +143,7 @@ def mark_deleted(conn: sqlite3.Connection, arxiv_id: str, oai_datestamp: str) ->
         )
         VALUES (?, NULL, 0, ?, NULL, NULL, '', '', '', CURRENT_TIMESTAMP)
         ON CONFLICT(arxiv_id) DO UPDATE SET
+            vector_id = NULL,
             active = 0,
             oai_datestamp = excluded.oai_datestamp,
             last_seen_at = CURRENT_TIMESTAMP
