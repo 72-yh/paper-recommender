@@ -1,1 +1,1 @@
-# arxiv-recommender
+# paper-recommender
