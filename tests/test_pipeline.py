@@ -74,6 +74,92 @@ def test_apply_unchanged_record_updates_datestamp_only() -> None:
     assert stored.oai_datestamp == "2024-01-04"
 
 
+def test_apply_unchanged_record_refreshes_metadata_without_clearing_vector() -> None:
+    conn = connect_db(":memory:")
+    init_db(conn)
+    content_hash = compute_content_hash("Attention", "Abstract", ("cs.CL", "cs.LG"))
+    upsert_paper(
+        conn,
+        Paper(
+            arxiv_id="1706.03762",
+            vector_id=1,
+            active=True,
+            oai_datestamp="2024-01-02",
+            published_date="2017-06-12",
+            updated_date="2023-08-02",
+            primary_category="cs.CL",
+            categories=("cs.CL", "cs.LG"),
+            content_hash=content_hash,
+        ),
+    )
+
+    decision = apply_oai_record(
+        conn,
+        OaiRecord(
+            arxiv_id="1706.03762",
+            oai_datestamp="2024-01-04",
+            deleted=False,
+            title="Attention",
+            abstract="Abstract",
+            categories=("cs.LG", "cs.CL"),
+            published_date="2017-06-13",
+            updated_date="2024-01-01",
+        ),
+    )
+
+    stored = get_paper(conn, "1706.03762")
+    assert decision == "unchanged"
+    assert stored is not None
+    assert stored.vector_id == 1
+    assert stored.oai_datestamp == "2024-01-04"
+    assert stored.published_date == "2017-06-13"
+    assert stored.updated_date == "2024-01-01"
+    assert stored.primary_category == "cs.LG"
+    assert stored.categories == ("cs.LG", "cs.CL")
+
+
+def test_apply_unchanged_record_reactivates_existing_paper_without_clearing_vector() -> None:
+    conn = connect_db(":memory:")
+    init_db(conn)
+    content_hash = compute_content_hash("Attention", "Abstract", ("cs.CL",))
+    upsert_paper(
+        conn,
+        Paper(
+            arxiv_id="1706.03762",
+            vector_id=1,
+            active=False,
+            oai_datestamp="2024-01-02",
+            published_date="2017-06-12",
+            updated_date="2023-08-02",
+            primary_category="cs.CL",
+            categories=("cs.CL",),
+            content_hash=content_hash,
+        ),
+    )
+
+    decision = apply_oai_record(
+        conn,
+        OaiRecord(
+            arxiv_id="1706.03762",
+            oai_datestamp="2024-01-04",
+            deleted=False,
+            title="Attention",
+            abstract="Abstract",
+            categories=("cs.CL",),
+            published_date="2017-06-13",
+            updated_date="2024-01-01",
+        ),
+    )
+
+    stored = get_paper(conn, "1706.03762")
+    assert decision == "unchanged"
+    assert stored is not None
+    assert stored.active is True
+    assert stored.vector_id == 1
+    assert stored.published_date == "2017-06-13"
+    assert stored.updated_date == "2024-01-01"
+
+
 def test_apply_changed_record_clears_vector_for_reembedding() -> None:
     conn = connect_db(":memory:")
     init_db(conn)

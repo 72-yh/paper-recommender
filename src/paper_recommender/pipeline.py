@@ -5,7 +5,7 @@ import sqlite3
 
 from paper_recommender.models import Paper
 from paper_recommender.oai import OaiRecord
-from paper_recommender.storage import get_paper, mark_deleted, update_oai_datestamp, upsert_paper
+from paper_recommender.storage import get_paper, mark_deleted, upsert_paper
 
 
 def _normalize_text(value: str) -> str:
@@ -33,7 +33,20 @@ def apply_oai_record(conn: sqlite3.Connection, record: OaiRecord) -> str:
     content_hash = compute_content_hash(title, abstract, record.categories)
     existing = get_paper(conn, record.arxiv_id)
     if existing and existing.content_hash == content_hash:
-        update_oai_datestamp(conn, record.arxiv_id, record.oai_datestamp)
+        upsert_paper(
+            conn,
+            Paper(
+                arxiv_id=record.arxiv_id,
+                vector_id=existing.vector_id,
+                active=True,
+                oai_datestamp=record.oai_datestamp,
+                published_date=record.published_date,
+                updated_date=record.updated_date,
+                primary_category=record.categories[0] if record.categories else "",
+                categories=record.categories,
+                content_hash=content_hash,
+            ),
+        )
         return "unchanged"
 
     paper = Paper(
