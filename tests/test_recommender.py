@@ -12,16 +12,22 @@ from paper_recommender.storage import connect_db, init_db, mark_deleted, upsert_
 from paper_recommender.vector_store import ExactVectorIndex
 
 
-def _paper(arxiv_id: str, vector_id: int | None, category: str, date: str = "2024-01-01") -> Paper:
+def _paper(
+    arxiv_id: str,
+    vector_id: int | None,
+    category: str,
+    date: str | None = "2024-01-01",
+    categories: tuple[str, ...] | None = None,
+) -> Paper:
     return Paper(
         arxiv_id=arxiv_id,
         vector_id=vector_id,
         active=True,
-        oai_datestamp=date,
+        oai_datestamp=date or "2024-01-01",
         published_date=date,
         updated_date=date,
         primary_category=category,
-        categories=(category,),
+        categories=categories or (category,),
         content_hash=f"hash-{arxiv_id}",
     )
 
@@ -76,6 +82,25 @@ def test_recommend_applies_category_filter() -> None:
     results = recommend(conn, index, "1706.03762", top_k=5, category="cs.LG")
 
     assert [result.arxiv_id for result in results] == ["2222.22222"]
+
+
+def test_recommend_category_filter_matches_secondary_category() -> None:
+    conn = _init_conn_with_papers(
+        [
+            _paper("1706.03762", 1, "cs.CL"),
+            _paper("1111.11111", 2, "cs.AI", categories=("cs.AI", "cs.LG")),
+        ]
+    )
+    index = ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.9, 0.1], dtype=np.float32),
+        }
+    )
+
+    results = recommend(conn, index, "1706.03762", top_k=5, category="cs.LG")
+
+    assert [result.arxiv_id for result in results] == ["1111.11111"]
 
 
 def test_recommend_rejects_missing_paper() -> None:
@@ -166,6 +191,29 @@ def test_recommend_applies_published_date_filters() -> None:
     assert [result.arxiv_id for result in results] == ["2222.22222", "3333.33333"]
 
 
+def test_recommend_excludes_undated_candidate_when_date_filter_is_present() -> None:
+    conn = _init_conn_with_papers(
+        [
+            _paper("1706.03762", 1, "cs.CL", "2024-01-15"),
+            _paper("1111.11111", 2, "cs.CL", None),
+            _paper("2222.22222", 3, "cs.CL", "2024-01-16"),
+        ]
+    )
+    index = ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.99, 0.01], dtype=np.float32),
+            3: np.array([0.9, 0.1], dtype=np.float32),
+        }
+    )
+
+    results_from = recommend(conn, index, "1706.03762", top_k=5, date_from="2024-01-01")
+    results_to = recommend(conn, index, "1706.03762", top_k=5, date_to="2024-01-31")
+
+    assert [result.arxiv_id for result in results_from] == ["2222.22222"]
+    assert [result.arxiv_id for result in results_to] == ["2222.22222"]
+
+
 def test_recommend_returns_empty_for_non_positive_top_k() -> None:
     conn = _init_conn_with_papers([_paper("1706.03762", 1, "cs.CL")])
     index = ExactVectorIndex.from_items({1: np.array([1.0, 0.0], dtype=np.float32)})
@@ -183,3 +231,11 @@ def test_recommend_rejects_query_vector_missing_from_index() -> None:
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.message == VECTOR_MISSING_MESSAGE
+
+
+def test_recommendation_error_string_is_message() -> None:
+    error = RecommendationError(404, "x")
+
+    assert str(error) == "x"
+    assert error.status_code == 404
+    assert error.message == "x"

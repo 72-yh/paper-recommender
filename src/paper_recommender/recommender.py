@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
 
 from paper_recommender.models import (
     DELETED_RECORD_MESSAGE,
@@ -13,10 +12,11 @@ from paper_recommender.storage import get_paper, get_paper_by_vector_id
 from paper_recommender.vector_store import ExactVectorIndex
 
 
-@dataclass(frozen=True)
 class RecommendationError(Exception):
-    status_code: int
-    message: str
+    def __init__(self, status_code: int, message: str) -> None:
+        self.status_code = status_code
+        self.message = message
+        super().__init__(message)
 
 
 def recommend(
@@ -53,6 +53,8 @@ def recommend(
         if not candidate.active:
             continue
         if category is not None and category not in candidate.categories:
+            continue
+        if (date_from is not None or date_to is not None) and candidate.published_date is None:
             continue
         if date_from is not None and candidate.published_date is not None:
             if candidate.published_date < date_from:
