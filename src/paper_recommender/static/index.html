@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Paper Recommender</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="form-panel" aria-labelledby="page-title">
+        <h1 id="page-title">Paper Recommender</h1>
+        <form id="recommend-form">
+          <label for="url">arXiv URL</label>
+          <input
+            id="url"
+            name="url"
+            type="url"
+            placeholder="https://arxiv.org/abs/1706.03762"
+            required
+          />
+
+          <div class="filters">
+            <div>
+              <label for="category">Category</label>
+              <input id="category" name="category" type="text" placeholder="cs.CL" />
+            </div>
+            <div>
+              <label>Date range</label>
+              <div class="date-range">
+                <input id="date-from" name="date_from" type="date" aria-label="Start date" />
+                <input id="date-to" name="date_to" type="date" aria-label="End date" />
+              </div>
+            </div>
+            <div>
+              <label for="top-k">Top K</label>
+              <input id="top-k" name="top_k" type="number" min="1" max="100" value="10" />
+            </div>
+          </div>
+
+          <button type="submit">Find similar papers</button>
+        </form>
+      </section>
+
+      <section class="results-panel" aria-labelledby="results-title">
+        <h2 id="results-title">Similar papers</h2>
+        <p id="status" class="status">No results</p>
+        <ol id="results" class="results"></ol>
+      </section>
+    </main>
+
+    <template id="result-template">
+      <li class="result">
+        <div class="result-header">
+          <strong class="paper-id"></strong>
+          <span class="score"></span>
+        </div>
+        <p class="meta"></p>
+        <a class="arxiv-link" target="_blank" rel="noreferrer">Open on arXiv</a>
+      </li>
+    </template>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <ListRecords>
+    <record>
+      <header>
+        <identifier>oai:arXiv.org:1706.03762</identifier>
+        <datestamp>2024-01-02</datestamp>
+      </header>
+      <metadata>
+        <arXiv xmlns="http://arxiv.org/OAI/arXiv/">
+          <id>1706.03762</id>
+          <created>2017-06-12</created>
+          <updated>2023-08-02</updated>
+          <title>Attention Is All You Need</title>
+          <abstract>We propose a new simple network architecture.</abstract>
+          <categories>cs.CL cs.LG</categories>
+        </arXiv>
+      </metadata>
+    </record>
+    <record>
+      <header status="deleted">
+        <identifier>oai:arXiv.org:9999.00001</identifier>
+        <datestamp>2024-01-03</datestamp>
+      </header>
+    </record>
+    <resumptionToken cursor="0" completeListSize="2">abc123</resumptionToken>
+  </ListRecords>
+</OAI-PMH>
