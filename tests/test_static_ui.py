@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 from fastapi.testclient import TestClient
 
@@ -33,11 +34,37 @@ def test_static_ui_posts_to_recommend_endpoint() -> None:
 def test_static_ui_normalizes_non_success_error_details() -> None:
     javascript = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 
-    assert "async function parseJsonOrNull" in javascript
-    assert "function normalizeErrorDetail" in javascript
-    assert "Request failed" in javascript
-    assert "Invalid request" in javascript
-    assert ".json()" in javascript
+    assert re.search(
+        r"async function parseJsonOrNull\(response\)\s*{.*?catch\s*{\s*return null;\s*}",
+        javascript,
+        re.DOTALL,
+    )
+    assert re.search(
+        r"function normalizeErrorDetail\(detail\)\s*{"
+        r".*?typeof detail === \"string\""
+        r".*?return detail;"
+        r".*?Array\.isArray\(detail\)"
+        r".*?const itemWithMessage = detail\.find"
+        r".*?typeof item\.msg === \"string\""
+        r".*?return itemWithMessage\.msg;"
+        r".*?return \"Invalid request\";",
+        javascript,
+        re.DOTALL,
+    )
+
+
+def test_static_ui_uses_request_failure_status_for_non_success_responses() -> None:
+    javascript = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    non_ok_branch = re.search(
+        r"if \(!response\.ok\)\s*{(?P<body>.*?)\n\s*}",
+        javascript,
+        re.DOTALL,
+    )
+
+    assert non_ok_branch is not None
+    assert "errorStatusText(body)" in non_ok_branch.group("body")
+    assert "No results" not in non_ok_branch.group("body")
+    assert 'setStatus("Request failed")' in javascript
 
 
 def test_root_serves_static_ui_without_shadowing_api_routes(tmp_path) -> None:

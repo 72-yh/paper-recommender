@@ -10,24 +10,32 @@ function setStatus(message) {
 async function parseJsonOrNull(response) {
   try {
     return await response.json();
-  } catch (error) {
+  } catch {
     return null;
   }
 }
 
-function normalizeErrorDetail(body, fallbackMessage) {
-  const detail = body && body.detail;
-
+function normalizeErrorDetail(detail) {
   if (typeof detail === "string" && detail.trim()) {
     return detail;
   }
 
   if (Array.isArray(detail)) {
-    const firstMessage = detail.find((item) => item && typeof item.msg === "string")?.msg;
-    return firstMessage || "Invalid request";
+    const itemWithMessage = detail.find((item) => item && typeof item.msg === "string");
+    if (itemWithMessage) {
+      return itemWithMessage.msg;
+    }
   }
 
-  return fallbackMessage;
+  return "Invalid request";
+}
+
+function errorStatusText(body) {
+  if (body && body.detail !== undefined) {
+    return normalizeErrorDetail(body.detail);
+  }
+
+  return "Request failed";
 }
 
 function renderResults(results) {
@@ -75,7 +83,7 @@ form.addEventListener("submit", async (event) => {
     const body = await parseJsonOrNull(response);
 
     if (!response.ok) {
-      setStatus(normalizeErrorDetail(body, response.status === 422 ? "Invalid request" : "Request failed"));
+      setStatus(errorStatusText(body));
       return;
     }
 
