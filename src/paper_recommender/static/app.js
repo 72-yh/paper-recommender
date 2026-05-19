@@ -7,6 +7,29 @@ function setStatus(message) {
   statusNode.textContent = message;
 }
 
+async function parseJsonOrNull(response) {
+  try {
+    return await response.json();
+  } catch (error) {
+    return null;
+  }
+}
+
+function normalizeErrorDetail(body, fallbackMessage) {
+  const detail = body && body.detail;
+
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+
+  if (Array.isArray(detail)) {
+    const firstMessage = detail.find((item) => item && typeof item.msg === "string")?.msg;
+    return firstMessage || "Invalid request";
+  }
+
+  return fallbackMessage;
+}
+
 function renderResults(results) {
   resultsNode.replaceChildren();
 
@@ -49,15 +72,15 @@ form.addEventListener("submit", async (event) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const body = await response.json();
+    const body = await parseJsonOrNull(response);
 
     if (!response.ok) {
-      setStatus(body.detail || "No results");
+      setStatus(normalizeErrorDetail(body, response.status === 422 ? "Invalid request" : "Request failed"));
       return;
     }
 
-    renderResults(body.results || []);
+    renderResults((body && body.results) || []);
   } catch (error) {
-    setStatus("No results");
+    setStatus("Request failed");
   }
 });

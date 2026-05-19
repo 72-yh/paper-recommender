@@ -30,6 +30,16 @@ def test_static_ui_posts_to_recommend_endpoint() -> None:
     assert 'fetch("/api/recommend"' in javascript
 
 
+def test_static_ui_normalizes_non_success_error_details() -> None:
+    javascript = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "async function parseJsonOrNull" in javascript
+    assert "function normalizeErrorDetail" in javascript
+    assert "Request failed" in javascript
+    assert "Invalid request" in javascript
+    assert ".json()" in javascript
+
+
 def test_root_serves_static_ui_without_shadowing_api_routes(tmp_path) -> None:
     client = TestClient(
         create_app(
