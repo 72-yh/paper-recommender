@@ -49,13 +49,17 @@ def _build_client(tmp_path, papers: list[Paper] | None = None) -> TestClient:
     return TestClient(create_app(db_path=db_path, index_path=index_path))
 
 
-def _assert_top_k_validation_error(response, expected_words: tuple[str, ...]) -> None:
+def _assert_top_k_validation_error(
+    response,
+    expected_words: tuple[str, ...],
+    expected_ctx: dict[str, int],
+) -> None:
     matching_errors = [
         error
         for error in response.json()["detail"]
         if "top_k" in error.get("loc", ()) and all(
             word in error.get("msg", "").lower() for word in expected_words
-        )
+        ) and all(error.get("ctx", {}).get(key) == value for key, value in expected_ctx.items())
     ]
     assert matching_errors
 
@@ -116,7 +120,7 @@ def test_recommend_endpoint_rejects_zero_top_k(tmp_path) -> None:
     )
 
     assert response.status_code == 422
-    _assert_top_k_validation_error(response, ("greater", "equal"))
+    _assert_top_k_validation_error(response, ("greater", "equal"), {"ge": 1})
 
 
 def test_recommend_endpoint_rejects_top_k_above_100(tmp_path) -> None:
@@ -128,7 +132,7 @@ def test_recommend_endpoint_rejects_top_k_above_100(tmp_path) -> None:
     )
 
     assert response.status_code == 422
-    _assert_top_k_validation_error(response, ("less", "equal"))
+    _assert_top_k_validation_error(response, ("less", "equal"), {"le": 100})
 
 
 def test_recommend_endpoint_maps_recommendation_error(tmp_path) -> None:
