@@ -49,6 +49,17 @@ def _build_client(tmp_path, papers: list[Paper] | None = None) -> TestClient:
     return TestClient(create_app(db_path=db_path, index_path=index_path))
 
 
+def _assert_top_k_validation_error(response, expected_words: tuple[str, ...]) -> None:
+    matching_errors = [
+        error
+        for error in response.json()["detail"]
+        if "top_k" in error.get("loc", ()) and all(
+            word in error.get("msg", "").lower() for word in expected_words
+        )
+    ]
+    assert matching_errors
+
+
 def test_health_endpoint(tmp_path) -> None:
     client = _build_client(tmp_path)
 
@@ -105,6 +116,7 @@ def test_recommend_endpoint_rejects_zero_top_k(tmp_path) -> None:
     )
 
     assert response.status_code == 422
+    _assert_top_k_validation_error(response, ("greater", "equal"))
 
 
 def test_recommend_endpoint_rejects_top_k_above_100(tmp_path) -> None:
@@ -116,6 +128,7 @@ def test_recommend_endpoint_rejects_top_k_above_100(tmp_path) -> None:
     )
 
     assert response.status_code == 422
+    _assert_top_k_validation_error(response, ("less", "equal"))
 
 
 def test_recommend_endpoint_maps_recommendation_error(tmp_path) -> None:
