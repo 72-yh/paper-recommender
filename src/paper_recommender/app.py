@@ -17,7 +17,7 @@ class RecommendRequest(BaseModel):
     category: str | None = None
     date_from: str | None = None
     date_to: str | None = None
-    top_k: int = Field(default=10, ge=0)
+    top_k: int = Field(default=10, ge=1, le=100)
 
 
 def create_app(
@@ -25,7 +25,6 @@ def create_app(
     index_path: str | Path = "data/vectors.npz",
 ) -> FastAPI:
     app = FastAPI(title="Paper Recommender")
-    index = ExactVectorIndex.load(index_path)
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -35,6 +34,7 @@ def create_app(
     def recommend_papers(request: RecommendRequest) -> dict[str, object]:
         try:
             arxiv_id = parse_arxiv_id(request.url)
+            index = ExactVectorIndex.load(index_path)
             conn = connect_db(db_path)
             try:
                 results = recommend(
@@ -60,3 +60,6 @@ def create_app(
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     return app
+
+
+app = create_app()

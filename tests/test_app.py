@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+import paper_recommender.app as app_module
 from paper_recommender.app import create_app
 from paper_recommender.models import Paper, VECTOR_MISSING_MESSAGE
 from paper_recommender.storage import connect_db, init_db, upsert_paper
@@ -57,6 +58,10 @@ def test_health_endpoint(tmp_path) -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_module_exports_app() -> None:
+    assert app_module.app is not None
+
+
 def test_recommend_endpoint_returns_results(tmp_path) -> None:
     client = _build_client(tmp_path)
 
@@ -89,6 +94,28 @@ def test_recommend_endpoint_rejects_invalid_url(tmp_path) -> None:
 
     assert response.status_code == 400
     assert "Please enter a valid arXiv URL" in response.json()["detail"]
+
+
+def test_recommend_endpoint_rejects_zero_top_k(tmp_path) -> None:
+    client = _build_client(tmp_path)
+
+    response = client.post(
+        "/api/recommend",
+        json={"url": "https://arxiv.org/abs/1706.03762", "top_k": 0},
+    )
+
+    assert response.status_code == 422
+
+
+def test_recommend_endpoint_rejects_top_k_above_100(tmp_path) -> None:
+    client = _build_client(tmp_path)
+
+    response = client.post(
+        "/api/recommend",
+        json={"url": "https://arxiv.org/abs/1706.03762", "top_k": 101},
+    )
+
+    assert response.status_code == 422
 
 
 def test_recommend_endpoint_maps_recommendation_error(tmp_path) -> None:
