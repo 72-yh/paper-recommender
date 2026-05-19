@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Protocol
+
+import numpy as np
 
 from paper_recommender.models import (
     DELETED_RECORD_MESSAGE,
@@ -9,7 +12,7 @@ from paper_recommender.models import (
     VECTOR_MISSING_MESSAGE,
 )
 from paper_recommender.storage import get_paper, get_paper_by_vector_id
-from paper_recommender.vector_store import ExactVectorIndex
+from paper_recommender.vector_store import VectorSearchResult
 
 
 class RecommendationError(Exception):
@@ -19,9 +22,15 @@ class RecommendationError(Exception):
         super().__init__(message)
 
 
+class SearchableIndex(Protocol):
+    def get(self, vector_id: int) -> np.ndarray | None: ...
+
+    def search(self, query: np.ndarray, top_k: int) -> list[VectorSearchResult]: ...
+
+
 def recommend(
     conn: sqlite3.Connection,
-    index: ExactVectorIndex,
+    index: SearchableIndex,
     arxiv_id: str,
     top_k: int,
     category: str | None = None,

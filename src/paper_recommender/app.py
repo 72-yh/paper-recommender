@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -8,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from paper_recommender.arxiv_id import InvalidArxivUrl, parse_arxiv_id
+from paper_recommender.compressed_vector_store import Int8VectorIndex
 from paper_recommender.recommender import RecommendationError, recommend
 from paper_recommender.storage import connect_db
 from paper_recommender.vector_store import ExactVectorIndex
@@ -22,10 +24,21 @@ class RecommendRequest(BaseModel):
 
 
 def create_app(
-    db_path: str | Path = "data/paper_recommender.db",
-    index_path: str | Path = "data/vectors.npz",
+    db_path: str | Path | None = None,
+    index_path: str | Path | None = None,
+    index_kind: str | None = None,
 ) -> FastAPI:
+    db_path = db_path or os.environ.get("PAPER_RECOMMENDER_DB_PATH", "data/paper_recommender.db")
+    index_path = index_path or os.environ.get("PAPER_RECOMMENDER_INDEX_PATH", "data/vectors.npz")
+    index_kind = index_kind or os.environ.get("PAPER_RECOMMENDER_INDEX_KIND", "exact")
     app = FastAPI(title="Paper Recommender")
+    cached_index = None
+
+    def get_index():
+        nonlocal cached_index
+        if cached_index is None:
+            cached_index = _load_index(index_path, index_kind)
+        return cached_index
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -35,7 +48,7 @@ def create_app(
     def recommend_papers(request: RecommendRequest) -> dict[str, object]:
         try:
             arxiv_id = parse_arxiv_id(request.url)
-            index = ExactVectorIndex.load(index_path)
+            index = get_index()
             conn = connect_db(db_path)
             try:
                 results = recommend(
@@ -65,6 +78,14 @@ def create_app(
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     return app
+
+
+def _load_index(index_path: str | Path, index_kind: str):
+    if index_kind == "exact":
+        return ExactVectorIndex.load(index_path)
+    if index_kind == "int8":
+        return Int8VectorIndex.load(index_path)
+    raise RecommendationError(500, f"Unsupported vector index kind: {index_kind}")
 
 
 app = create_app()

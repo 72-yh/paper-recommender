@@ -121,6 +121,35 @@ def get_paper_by_vector_id(conn: sqlite3.Connection, vector_id: int) -> Paper | 
     return _row_to_paper(row)
 
 
+def list_active_papers_with_vectors(conn: sqlite3.Connection) -> list[Paper]:
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM papers
+        WHERE active = 1 AND vector_id IS NOT NULL
+        ORDER BY vector_id
+        """
+    ).fetchall()
+    return [paper for row in rows if (paper := _row_to_paper(row)) is not None]
+
+
+def max_vector_id(conn: sqlite3.Connection) -> int:
+    row: Any = conn.execute("SELECT COALESCE(MAX(vector_id), 0) AS value FROM papers").fetchone()
+    return int(row["value"])
+
+
+def set_paper_vector_id(conn: sqlite3.Connection, arxiv_id: str, vector_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE papers
+        SET vector_id = ?, last_seen_at = CURRENT_TIMESTAMP
+        WHERE arxiv_id = ?
+        """,
+        (vector_id, arxiv_id),
+    )
+    conn.commit()
+
+
 def update_oai_datestamp(conn: sqlite3.Connection, arxiv_id: str, oai_datestamp: str) -> None:
     conn.execute(
         """

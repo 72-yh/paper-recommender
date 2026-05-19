@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 import paper_recommender.app as app_module
 from paper_recommender.app import create_app
+from paper_recommender.compressed_vector_store import Int8VectorIndex
 from paper_recommender.models import Paper, VECTOR_MISSING_MESSAGE
 from paper_recommender.storage import connect_db, init_db, upsert_paper
 from paper_recommender.vector_store import ExactVectorIndex
@@ -47,6 +48,27 @@ def _build_client(tmp_path, papers: list[Paper] | None = None) -> TestClient:
         }
     ).save(index_path)
     return TestClient(create_app(db_path=db_path, index_path=index_path))
+
+
+def _build_int8_client(tmp_path) -> TestClient:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors_int8.npz"
+    conn = connect_db(db_path)
+    init_db(conn)
+    for paper in [
+        _paper("1706.03762", 1, date="2017-06-12"),
+        _paper("1111.11111", 2, date="2020-01-01"),
+    ]:
+        upsert_paper(conn, paper)
+    conn.close()
+    exact = ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.9, 0.1], dtype=np.float32),
+        }
+    )
+    Int8VectorIndex.from_exact_index(exact).save(index_path)
+    return TestClient(create_app(db_path=db_path, index_path=index_path, index_kind="int8"))
 
 
 def _assert_top_k_validation_error(
@@ -100,6 +122,84 @@ def test_recommend_endpoint_returns_results(tmp_path) -> None:
             }
         ],
     }
+
+
+def test_recommend_endpoint_can_use_int8_index(tmp_path) -> None:
+    client = _build_int8_client(tmp_path)
+
+    response = client.post(
+        "/api/recommend",
+        json={"url": "https://arxiv.org/abs/1706.03762", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert result["arxiv_id"] == "1111.11111"
+    assert result["similarity_score"] == pytest.approx(0.9938837, abs=0.01)
+
+
+def test_create_app_reads_index_environment(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors_int8.npz"
+    conn = connect_db(db_path)
+    init_db(conn)
+    upsert_paper(conn, _paper("1706.03762", 1, date="2017-06-12"))
+    upsert_paper(conn, _paper("1111.11111", 2, date="2020-01-01"))
+    conn.close()
+    exact = ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.9, 0.1], dtype=np.float32),
+        }
+    )
+    Int8VectorIndex.from_exact_index(exact).save(index_path)
+    monkeypatch.setenv("PAPER_RECOMMENDER_DB_PATH", str(db_path))
+    monkeypatch.setenv("PAPER_RECOMMENDER_INDEX_PATH", str(index_path))
+    monkeypatch.setenv("PAPER_RECOMMENDER_INDEX_KIND", "int8")
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/recommend",
+        json={"url": "https://arxiv.org/abs/1706.03762", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["results"][0]["arxiv_id"] == "1111.11111"
+
+
+def test_recommend_endpoint_loads_index_once(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors.npz"
+    conn = connect_db(db_path)
+    init_db(conn)
+    upsert_paper(conn, _paper("1706.03762", 1, date="2017-06-12"))
+    upsert_paper(conn, _paper("1111.11111", 2, date="2020-01-01"))
+    conn.close()
+    ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.9, 0.1], dtype=np.float32),
+        }
+    ).save(index_path)
+    load_count = 0
+    original_load_index = app_module._load_index
+
+    def counting_load_index(index_path, index_kind):
+        nonlocal load_count
+        load_count += 1
+        return original_load_index(index_path, index_kind)
+
+    monkeypatch.setattr(app_module, "_load_index", counting_load_index)
+    client = TestClient(create_app(db_path=db_path, index_path=index_path))
+
+    for _ in range(2):
+        response = client.post(
+            "/api/recommend",
+            json={"url": "https://arxiv.org/abs/1706.03762", "top_k": 1},
+        )
+        assert response.status_code == 200
+
+    assert load_count == 1
 
 
 def test_recommend_endpoint_rejects_invalid_url(tmp_path) -> None:
