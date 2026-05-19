@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -57,6 +58,10 @@ def create_app(
 
     static_dir = Path(__file__).with_name("static")
     if static_dir.exists():
+        @app.get("/")
+        def index() -> FileResponse:
+            return FileResponse(static_dir / "index.html")
+
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     return app
