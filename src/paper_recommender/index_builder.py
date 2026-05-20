@@ -114,7 +114,7 @@ def build_index_from_oai(
 
                 before = get_paper(conn, record.arxiv_id)
                 old_vector_id = before.vector_id if before is not None else None
-                decision = apply_oai_record(conn, record)
+                decision = apply_oai_record(conn, record, commit=False)
                 stats["records_seen"] += 1
                 stats[decision] += 1
                 last_datestamp = record.oai_datestamp
@@ -140,7 +140,7 @@ def build_index_from_oai(
                         next_vector_id += 1
                     if old_vector_id is not None and old_vector_id != vector_id:
                         items.pop(old_vector_id, None)
-                    set_paper_vector_id(conn, record.arxiv_id, vector_id)
+                    set_paper_vector_id(conn, record.arxiv_id, vector_id, commit=False)
                     pending_embeddings.append((vector_id, embedding_text(record)))
                     stats["embedded"] += 1
 
@@ -149,10 +149,12 @@ def build_index_from_oai(
                     pending_embeddings,
                     target_vector_count,
                 ):
-                    _flush_embeddings(embedder, items, pending_embeddings)
+                    if _flush_embeddings(embedder, items, pending_embeddings):
+                        conn.commit()
 
                 if _should_checkpoint(stats["records_seen"], checkpoint_every_records):
-                    _flush_embeddings(embedder, items, pending_embeddings)
+                    if _flush_embeddings(embedder, items, pending_embeddings):
+                        conn.commit()
                     _write_checkpoint(conn, index_path, items, last_datestamp)
                     stats["checkpoints_written"] += 1
 
@@ -161,7 +163,8 @@ def build_index_from_oai(
                     break
 
             if pending_embeddings:
-                _flush_embeddings(embedder, items, pending_embeddings)
+                if _flush_embeddings(embedder, items, pending_embeddings):
+                    conn.commit()
 
             if _should_checkpoint(stats["batches_seen"], checkpoint_every_batches):
                 _write_checkpoint(conn, index_path, items, last_datestamp)
@@ -203,15 +206,20 @@ def _pending_target_reached(
     return len(items) + len(pending_embeddings) >= target_vector_count
 
 
-def _flush_embeddings(embedder, items: dict[int, np.ndarray], pending_embeddings: list[tuple[int, str]]) -> None:
+def _flush_embeddings(
+    embedder,
+    items: dict[int, np.ndarray],
+    pending_embeddings: list[tuple[int, str]],
+) -> bool:
     if not pending_embeddings:
-        return
+        return False
 
     texts = [text for _, text in pending_embeddings]
     vectors = embedder.embed_texts(texts)
     for (vector_id, _), vector in zip(pending_embeddings, vectors, strict=True):
         items[vector_id] = vector
     pending_embeddings.clear()
+    return True
 
 
 def _write_checkpoint(

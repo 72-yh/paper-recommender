@@ -468,3 +468,20 @@ def test_build_index_from_oai_target_vector_count_stops_inside_large_oai_batch(
     assert summary.records_seen == 2
     assert conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0] == 2
     assert index.vector_ids.tolist() == [1, 2]
+
+
+def test_build_index_from_oai_commits_embedding_chunks_in_batches(tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+
+    build_index_from_oai(
+        endpoint="https://example.test/oai",
+        db_path=db_path,
+        index_path=tmp_path / "vectors.npz",
+        embedder=HashingTextEmbedder(dimensions=16),
+        fetch_text=lambda _url: _many_records_xml(3),
+        embedding_batch_size=2,
+    )
+
+    conn = connect_db(db_path)
+
+    assert conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0] == 3

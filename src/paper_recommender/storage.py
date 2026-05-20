@@ -77,7 +77,7 @@ def _row_to_paper(row: sqlite3.Row | None) -> Paper | None:
     )
 
 
-def upsert_paper(conn: sqlite3.Connection, paper: Paper) -> None:
+def upsert_paper(conn: sqlite3.Connection, paper: Paper, *, commit: bool = True) -> None:
     conn.execute(
         """
         INSERT INTO papers (
@@ -108,7 +108,8 @@ def upsert_paper(conn: sqlite3.Connection, paper: Paper) -> None:
             paper.content_hash,
         ),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def get_paper(conn: sqlite3.Connection, arxiv_id: str) -> Paper | None:
@@ -138,7 +139,13 @@ def max_vector_id(conn: sqlite3.Connection) -> int:
     return int(row["value"])
 
 
-def set_paper_vector_id(conn: sqlite3.Connection, arxiv_id: str, vector_id: int) -> None:
+def set_paper_vector_id(
+    conn: sqlite3.Connection,
+    arxiv_id: str,
+    vector_id: int,
+    *,
+    commit: bool = True,
+) -> None:
     conn.execute(
         """
         UPDATE papers
@@ -147,10 +154,17 @@ def set_paper_vector_id(conn: sqlite3.Connection, arxiv_id: str, vector_id: int)
         """,
         (vector_id, arxiv_id),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
-def update_oai_datestamp(conn: sqlite3.Connection, arxiv_id: str, oai_datestamp: str) -> None:
+def update_oai_datestamp(
+    conn: sqlite3.Connection,
+    arxiv_id: str,
+    oai_datestamp: str,
+    *,
+    commit: bool = True,
+) -> None:
     conn.execute(
         """
         UPDATE papers
@@ -159,10 +173,17 @@ def update_oai_datestamp(conn: sqlite3.Connection, arxiv_id: str, oai_datestamp:
         """,
         (oai_datestamp, arxiv_id),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
-def mark_deleted(conn: sqlite3.Connection, arxiv_id: str, oai_datestamp: str) -> None:
+def mark_deleted(
+    conn: sqlite3.Connection,
+    arxiv_id: str,
+    oai_datestamp: str,
+    *,
+    commit: bool = True,
+) -> None:
     existing = get_paper(conn, arxiv_id)
     conn.execute(
         """
@@ -184,10 +205,17 @@ def mark_deleted(conn: sqlite3.Connection, arxiv_id: str, oai_datestamp: str) ->
             "INSERT INTO index_deletes (arxiv_id, vector_id) VALUES (?, ?)",
             (arxiv_id, existing.vector_id),
         )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
-def set_pipeline_state(conn: sqlite3.Connection, key: str, value: str) -> None:
+def set_pipeline_state(
+    conn: sqlite3.Connection,
+    key: str,
+    value: str,
+    *,
+    commit: bool = True,
+) -> None:
     conn.execute(
         """
         INSERT INTO pipeline_state (key, value)
@@ -196,7 +224,8 @@ def set_pipeline_state(conn: sqlite3.Connection, key: str, value: str) -> None:
         """,
         (key, value),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def get_pipeline_state(conn: sqlite3.Connection, key: str) -> str | None:

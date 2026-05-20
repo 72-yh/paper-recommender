@@ -35,6 +35,35 @@ def test_upsert_and_get_paper() -> None:
     assert get_paper_by_vector_id(conn, 1) == paper
 
 
+def test_upsert_paper_can_defer_commit(tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    conn = connect_db(db_path)
+    init_db(conn)
+    upsert_paper(
+        conn,
+        Paper(
+            arxiv_id="1706.03762",
+            vector_id=1,
+            active=True,
+            oai_datestamp="2024-01-02",
+            published_date="2017-06-12",
+            updated_date=None,
+            primary_category="cs.CL",
+            categories=("cs.CL",),
+            content_hash="hash-a",
+        ),
+        commit=False,
+    )
+
+    other = connect_db(db_path)
+    try:
+        assert get_paper(other, "1706.03762") is None
+        conn.commit()
+        assert get_paper(other, "1706.03762") is not None
+    finally:
+        other.close()
+
+
 def test_mark_deleted_deactivates_paper_and_records_tombstone() -> None:
     conn = connect_db(":memory:")
     init_db(conn)

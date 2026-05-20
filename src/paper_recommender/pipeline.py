@@ -23,9 +23,9 @@ def compute_content_hash(title: str, abstract: str, categories: tuple[str, ...])
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def apply_oai_record(conn: sqlite3.Connection, record: OaiRecord) -> str:
+def apply_oai_record(conn: sqlite3.Connection, record: OaiRecord, *, commit: bool = True) -> str:
     if record.deleted:
-        mark_deleted(conn, record.arxiv_id, record.oai_datestamp)
+        mark_deleted(conn, record.arxiv_id, record.oai_datestamp, commit=commit)
         return "deleted"
 
     title = record.title or ""
@@ -46,6 +46,7 @@ def apply_oai_record(conn: sqlite3.Connection, record: OaiRecord) -> str:
                 categories=record.categories,
                 content_hash=content_hash,
             ),
+            commit=commit,
         )
         return "unchanged"
 
@@ -60,5 +61,5 @@ def apply_oai_record(conn: sqlite3.Connection, record: OaiRecord) -> str:
         categories=record.categories,
         content_hash=content_hash,
     )
-    upsert_paper(conn, paper)
+    upsert_paper(conn, paper, commit=commit)
     return "inserted" if existing is None else "updated"
