@@ -125,3 +125,35 @@ def test_fetch_oai_batches_delays_between_followup_requests() -> None:
     )
 
     assert delays == [3.0]
+
+
+def test_fetch_oai_batches_retries_transient_timeouts() -> None:
+    attempts = 0
+    delays: list[float] = []
+    xml = """
+        <OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+          <ListRecords></ListRecords>
+        </OAI-PMH>
+    """
+
+    def fetch_text(_url: str) -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise TimeoutError("temporary OAI read timeout")
+        return xml
+
+    batches = list(
+        fetch_oai_batches(
+            "https://example.test/oai",
+            from_date="2024-01-01",
+            fetch_text=fetch_text,
+            fetch_retries=2,
+            retry_delay_seconds=5.0,
+            sleep=delays.append,
+        )
+    )
+
+    assert len(batches) == 1
+    assert attempts == 3
+    assert delays == [5.0, 5.0]

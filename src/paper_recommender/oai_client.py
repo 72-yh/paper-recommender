@@ -39,6 +39,8 @@ def fetch_oai_batches(
     batch_limit: int | None = None,
     fetch_text: Callable[[str], str] | None = None,
     request_delay_seconds: float = 0.0,
+    fetch_retries: int = 3,
+    retry_delay_seconds: float = 30.0,
     sleep: Callable[[float], None] = time.sleep,
 ) -> Iterator[OaiBatch]:
     fetch = fetch_text or _fetch_text
@@ -55,7 +57,15 @@ def fetch_oai_batches(
             until_date=until_date,
             resumption_token=resumption_token,
         )
-        batch = parse_oai_records(fetch(url))
+        batch = parse_oai_records(
+            _fetch_with_retries(
+                fetch,
+                url,
+                fetch_retries=fetch_retries,
+                retry_delay_seconds=retry_delay_seconds,
+                sleep=sleep,
+            )
+        )
         yield batch
 
         batches_seen += 1
@@ -70,3 +80,23 @@ def _fetch_text(url: str) -> str:
     request = Request(url, headers={"User-Agent": USER_AGENT})
     with urlopen(request, timeout=60) as response:
         return response.read().decode("utf-8")
+
+
+def _fetch_with_retries(
+    fetch: Callable[[str], str],
+    url: str,
+    *,
+    fetch_retries: int,
+    retry_delay_seconds: float,
+    sleep: Callable[[float], None],
+) -> str:
+    attempts = max(0, fetch_retries) + 1
+    for attempt in range(attempts):
+        try:
+            return fetch(url)
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+            if retry_delay_seconds > 0:
+                sleep(retry_delay_seconds)
+    raise RuntimeError("unreachable fetch retry state")
