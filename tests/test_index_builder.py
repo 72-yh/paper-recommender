@@ -1,10 +1,20 @@
+from urllib.parse import parse_qs, urlparse
+
 import numpy as np
+import pytest
 
 from paper_recommender.index_builder import build_index_from_oai
 from paper_recommender.embedding import HashingTextEmbedder
 from paper_recommender.models import Paper
 from paper_recommender.recommender import recommend
-from paper_recommender.storage import connect_db, get_paper, init_db, upsert_paper
+from paper_recommender.storage import (
+    connect_db,
+    get_paper,
+    get_pipeline_state,
+    init_db,
+    set_pipeline_state,
+    upsert_paper,
+)
 from paper_recommender.vector_store import ExactVectorIndex
 
 
@@ -62,6 +72,38 @@ OAI_XML = """
         <datestamp>2024-01-02</datestamp>
       </header>
     </record>
+  </ListRecords>
+</OAI-PMH>
+"""
+
+
+def _single_record_xml(
+    arxiv_id: str,
+    datestamp: str,
+    *,
+    title: str = "Checkpoint Paper",
+    token: str | None = None,
+) -> str:
+    token_xml = f"<resumptionToken>{token}</resumptionToken>" if token else ""
+    return f"""
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <ListRecords>
+    <record>
+      <header>
+        <identifier>oai:arXiv.org:{arxiv_id}</identifier>
+        <datestamp>{datestamp}</datestamp>
+      </header>
+      <metadata>
+        <arXiv xmlns="http://arxiv.org/OAI/arXiv/">
+          <id>{arxiv_id}</id>
+          <created>{datestamp}</created>
+          <title>{title}</title>
+          <abstract>Checkpointable indexing for a larger corpus.</abstract>
+          <categories>cs.IR cs.DL</categories>
+        </arXiv>
+      </metadata>
+    </record>
+    {token_xml}
   </ListRecords>
 </OAI-PMH>
 """
@@ -240,3 +282,102 @@ def test_build_index_from_oai_batches_embeddings(tmp_path) -> None:
     assert len(embedder.text_batches) == 1
     assert len(embedder.text_batches[0]) == 3
     assert embedder.text_batches[0][0].startswith("Attention Is All You Need\n")
+
+
+def test_build_index_from_oai_checkpoints_completed_batches_before_later_failure(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors.npz"
+    responses = [
+        _single_record_xml("2401.00001", "2024-01-01", token="next-batch"),
+    ]
+
+    def fetch_text(_url: str) -> str:
+        if not responses:
+            raise RuntimeError("simulated later OAI failure")
+        return responses.pop(0)
+
+    with pytest.raises(RuntimeError, match="simulated later OAI failure"):
+        build_index_from_oai(
+            endpoint="https://example.test/oai",
+            db_path=db_path,
+            index_path=index_path,
+            from_date="2024-01-01",
+            embedder=HashingTextEmbedder(dimensions=16),
+            fetch_text=fetch_text,
+            checkpoint_every_batches=1,
+        )
+
+    conn = connect_db(db_path)
+    index = ExactVectorIndex.load(index_path)
+
+    assert index.vector_ids.tolist() == [1]
+    assert get_pipeline_state(conn, "last_successful_oai_datestamp") == "2024-01-01"
+
+
+def test_build_index_from_oai_resume_uses_saved_datestamp_when_from_date_is_missing(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "papers.db"
+    conn = connect_db(db_path)
+    init_db(conn)
+    set_pipeline_state(conn, "last_successful_oai_datestamp", "2024-02-03")
+    conn.close()
+    fetched_urls: list[str] = []
+
+    def fetch_text(url: str) -> str:
+        fetched_urls.append(url)
+        return _single_record_xml("2402.00001", "2024-02-04")
+
+    build_index_from_oai(
+        endpoint="https://example.test/oai",
+        db_path=db_path,
+        index_path=tmp_path / "vectors.npz",
+        resume=True,
+        embedder=HashingTextEmbedder(dimensions=16),
+        fetch_text=fetch_text,
+    )
+
+    query = parse_qs(urlparse(fetched_urls[0]).query)
+
+    assert query["from"] == ["2024-02-03"]
+
+
+def test_build_index_from_oai_skips_fetch_when_target_vector_count_already_exists(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors.npz"
+    conn = connect_db(db_path)
+    init_db(conn)
+    upsert_paper(
+        conn,
+        Paper(
+            arxiv_id="2401.00001",
+            vector_id=1,
+            active=True,
+            oai_datestamp="2024-01-01",
+            published_date="2024-01-01",
+            updated_date=None,
+            primary_category="cs.IR",
+            categories=("cs.IR",),
+            content_hash="existing",
+        ),
+    )
+    conn.close()
+    ExactVectorIndex.from_items({1: np.array([1.0, 0.0], dtype=np.float32)}).save(index_path)
+    fetched_urls: list[str] = []
+
+    summary = build_index_from_oai(
+        endpoint="https://example.test/oai",
+        db_path=db_path,
+        index_path=index_path,
+        target_vector_count=1,
+        embedder=HashingTextEmbedder(dimensions=2),
+        fetch_text=lambda url: fetched_urls.append(url) or OAI_XML,
+    )
+
+    assert fetched_urls == []
+    assert summary.records_seen == 0
+    assert ExactVectorIndex.load(index_path).vector_ids.tolist() == [1]

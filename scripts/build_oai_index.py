@@ -24,6 +24,9 @@ def main() -> None:
     parser.add_argument("--model-name", default=DEFAULT_MODEL_NAME)
     parser.add_argument("--request-delay-seconds", type=float, default=0.0)
     parser.add_argument("--reset", action="store_true")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--checkpoint-every-batches", type=int)
+    parser.add_argument("--target-vector-count", type=int)
     parser.add_argument("--db-path", type=Path, default=Path("data/paper_recommender.db"))
     parser.add_argument("--index-path", type=Path, default=Path("data/vectors.npz"))
     args = parser.parse_args()
@@ -40,7 +43,10 @@ def main() -> None:
         model_name=args.model_name,
         dimensions=args.dimensions,
         reset=args.reset,
+        resume=args.resume,
         request_delay_seconds=args.request_delay_seconds,
+        checkpoint_every_batches=args.checkpoint_every_batches,
+        target_vector_count=args.target_vector_count,
     )
     print(
         "Built index: "
@@ -48,6 +54,7 @@ def main() -> None:
         f"records={summary.records_seen}, "
         f"embedded={summary.embedded}, "
         f"deleted={summary.deleted}, "
+        f"checkpoints={summary.checkpoints_written}, "
         f"last_datestamp={summary.last_datestamp}"
     )
 

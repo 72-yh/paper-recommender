@@ -15,6 +15,7 @@ from paper_recommender.storage import (
     init_db,
     list_active_papers_with_vectors,
     max_vector_id,
+    get_pipeline_state,
     set_paper_vector_id,
     set_pipeline_state,
 )
@@ -30,6 +31,7 @@ class IndexBuildSummary:
     unchanged: int
     deleted: int
     embedded: int
+    checkpoints_written: int
     last_datestamp: str | None
 
 
@@ -47,8 +49,11 @@ def build_index_from_oai(
     model_name: str = DEFAULT_MODEL_NAME,
     dimensions: int = 256,
     reset: bool = False,
+    resume: bool = False,
     fetch_text: Callable[[str], str] | None = None,
     request_delay_seconds: float = 0.0,
+    checkpoint_every_batches: int | None = None,
+    target_vector_count: int | None = None,
 ) -> IndexBuildSummary:
     db_path = Path(db_path)
     index_path = Path(index_path)
@@ -60,6 +65,8 @@ def build_index_from_oai(
 
     conn = connect_db(db_path)
     init_db(conn)
+    if resume and from_date is None:
+        from_date = get_pipeline_state(conn, "last_successful_oai_datestamp")
     embedder = embedder or make_embedder(
         embedder_backend,
         model_name=model_name,
@@ -76,8 +83,12 @@ def build_index_from_oai(
         "unchanged": 0,
         "deleted": 0,
         "embedded": 0,
+        "checkpoints_written": 0,
     }
     last_datestamp: str | None = None
+    if _target_vector_count_reached(items, target_vector_count):
+        conn.close()
+        return IndexBuildSummary(last_datestamp=last_datestamp, **stats)
 
     try:
         stop = False
@@ -134,16 +145,45 @@ def build_index_from_oai(
                 for (vector_id, _), vector in zip(pending_embeddings, vectors, strict=True):
                     items[vector_id] = vector
 
+            if _should_checkpoint(stats["batches_seen"], checkpoint_every_batches):
+                _write_checkpoint(conn, index_path, items, last_datestamp)
+                stats["checkpoints_written"] += 1
+
+            if _target_vector_count_reached(items, target_vector_count):
+                stop = True
+
             if stop:
                 break
 
-        ExactVectorIndex.from_items(items).save(index_path)
-        if last_datestamp is not None:
-            set_pipeline_state(conn, "last_successful_oai_datestamp", last_datestamp)
+        _write_checkpoint(conn, index_path, items, last_datestamp)
     finally:
         conn.close()
 
     return IndexBuildSummary(last_datestamp=last_datestamp, **stats)
+
+
+def _should_checkpoint(batches_seen: int, checkpoint_every_batches: int | None) -> bool:
+    if checkpoint_every_batches is None or checkpoint_every_batches <= 0:
+        return False
+    return batches_seen % checkpoint_every_batches == 0
+
+
+def _target_vector_count_reached(
+    items: dict[int, np.ndarray],
+    target_vector_count: int | None,
+) -> bool:
+    return target_vector_count is not None and len(items) >= target_vector_count
+
+
+def _write_checkpoint(
+    conn,
+    index_path: Path,
+    items: dict[int, np.ndarray],
+    last_datestamp: str | None,
+) -> None:
+    ExactVectorIndex.from_items(items).save(index_path)
+    if last_datestamp is not None:
+        set_pipeline_state(conn, "last_successful_oai_datestamp", last_datestamp)
 
 
 def _load_existing_items(conn, index_path: Path, dimensions: int) -> dict[int, np.ndarray]:
