@@ -22,6 +22,7 @@ def main() -> None:
         default="sentence-transformers",
     )
     parser.add_argument("--model-name", default=DEFAULT_MODEL_NAME)
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--request-delay-seconds", type=float, default=0.0)
     parser.add_argument("--reset", action="store_true")
     parser.add_argument("--resume", action="store_true")
@@ -43,6 +44,7 @@ def main() -> None:
         max_records=args.max_records,
         embedder_backend=args.embedder,
         model_name=args.model_name,
+        device=args.device,
         dimensions=args.dimensions,
         reset=args.reset,
         resume=args.resume,

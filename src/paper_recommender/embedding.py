@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import re
 
 import numpy as np
@@ -52,9 +53,16 @@ class HashingTextEmbedder:
 
 
 class SentenceTransformerTextEmbedder:
-    def __init__(self, model_name: str = DEFAULT_MODEL_NAME, model_loader=None) -> None:
+    def __init__(
+        self,
+        model_name: str = DEFAULT_MODEL_NAME,
+        *,
+        device: str = "auto",
+        model_loader=None,
+    ) -> None:
         self.model_name = model_name
-        self._model = _load_sentence_transformer(model_name, model_loader)
+        self.device = _resolve_device(device)
+        self._model = _load_sentence_transformer(model_name, model_loader, self.device)
         self.dimensions = _embedding_dimensions(self._model)
 
     def embed_record(self, record: OaiRecord) -> np.ndarray:
@@ -80,18 +88,21 @@ def make_embedder(
     backend: str = "sentence-transformers",
     *,
     model_name: str = DEFAULT_MODEL_NAME,
+    device: str = "auto",
     dimensions: int = 256,
     model_loader=None,
 ):
     if backend == "sentence-transformers":
-        return SentenceTransformerTextEmbedder(model_name, model_loader=model_loader)
+        return SentenceTransformerTextEmbedder(model_name, device=device, model_loader=model_loader)
     if backend == "hashing":
         return HashingTextEmbedder(dimensions=dimensions)
     raise ValueError(f"unknown embedder backend: {backend}")
 
 
-def _load_sentence_transformer(model_name: str, model_loader):
+def _load_sentence_transformer(model_name: str, model_loader, device: str):
     if model_loader is not None:
+        if _model_loader_accepts_device(model_loader):
+            return model_loader(model_name, device=device)
         return model_loader(model_name)
     try:
         from sentence_transformers import SentenceTransformer
@@ -100,7 +111,28 @@ def _load_sentence_transformer(model_name: str, model_loader):
             "sentence-transformers is required for the default embedder. "
             "Install the embed extra or run with --embedder hashing for smoke tests."
         ) from exc
-    return SentenceTransformer(model_name)
+    return SentenceTransformer(model_name, device=device)
+
+
+def _resolve_device(device: str) -> str:
+    if device != "auto":
+        return device
+    try:
+        import torch
+    except ImportError:
+        return "cpu"
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def _model_loader_accepts_device(model_loader) -> bool:
+    try:
+        parameters = inspect.signature(model_loader).parameters
+    except (TypeError, ValueError):
+        return False
+    return "device" in parameters or any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
 
 
 def _embedding_dimensions(model) -> int:

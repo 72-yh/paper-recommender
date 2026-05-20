@@ -47,6 +47,7 @@ def build_index_from_oai(
     embedder=None,
     embedder_backend: str = "sentence-transformers",
     model_name: str = DEFAULT_MODEL_NAME,
+    device: str = "auto",
     dimensions: int = 256,
     reset: bool = False,
     resume: bool = False,
@@ -72,6 +73,7 @@ def build_index_from_oai(
     embedder = embedder or make_embedder(
         embedder_backend,
         model_name=model_name,
+        device=device,
         dimensions=dimensions,
     )
     items = _load_existing_items(conn, index_path, embedder.dimensions)

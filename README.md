@@ -5,11 +5,26 @@
 Use separate output files for large proofs so smaller smoke-test data is not
 overwritten.
 
+Recommended runtime split:
+
+- Use the local NVIDIA GPU machine for large initial backfills and any large
+  re-embedding jobs.
+- Use a low-cost CPU server for the recommendation API. Serving uses the stored
+  index and does not need a GPU.
+- Run daily incremental OAI updates on CPU first. If a backlog grows or a large
+  re-embedding is needed, run the same build command on the local GPU machine.
+
+Before GPU builds, install a CUDA-enabled PyTorch wheel in the virtual
+environment and verify `torch.cuda.is_available()` returns `True`. The project
+exposes `--device auto|cpu|cuda`; use `--device cuda` for large local builds and
+`--device cpu` for CPU-only update jobs.
+
 Initial 1M build:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\build_oai_index.py `
   --target-vector-count 1000000 `
+  --device cuda `
   --request-delay-seconds 3 `
   --embedding-batch-size 512 `
   --checkpoint-every-records 5000 `
@@ -24,6 +39,7 @@ Resume an interrupted 1M build:
 .\.venv\Scripts\python.exe scripts\build_oai_index.py `
   --target-vector-count 1000000 `
   --resume `
+  --device cuda `
   --request-delay-seconds 3 `
   --embedding-batch-size 512 `
   --checkpoint-every-records 5000 `

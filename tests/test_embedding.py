@@ -79,6 +79,27 @@ def test_sentence_transformer_text_embedder_uses_configured_model() -> None:
     assert np.allclose(vectors[0], np.array([1.0, 0.0, 0.0], dtype=np.float32))
 
 
+def test_sentence_transformer_text_embedder_passes_configured_device() -> None:
+    loaded: list[tuple[str, str | None]] = []
+
+    class FakeModel:
+        def get_sentence_embedding_dimension(self) -> int:
+            return 3
+
+    def load_model(name: str, device: str | None = None):
+        loaded.append((name, device))
+        return FakeModel()
+
+    embedder = SentenceTransformerTextEmbedder(
+        "BAAI/bge-small-en-v1.5",
+        device="cuda",
+        model_loader=load_model,
+    )
+
+    assert loaded == [("BAAI/bge-small-en-v1.5", "cuda")]
+    assert embedder.device == "cuda"
+
+
 def test_make_embedder_defaults_to_bge_small_model() -> None:
     loaded_names: list[str] = []
 
@@ -90,11 +111,12 @@ def test_make_embedder_defaults_to_bge_small_model() -> None:
         loaded_names.append(name)
         return FakeModel()
 
-    embedder = make_embedder("sentence-transformers", model_loader=load_model)
+    embedder = make_embedder("sentence-transformers", model_loader=load_model, device="cpu")
 
     assert isinstance(embedder, SentenceTransformerTextEmbedder)
     assert loaded_names == [DEFAULT_MODEL_NAME]
     assert embedder.dimensions == 384
+    assert embedder.device == "cpu"
 
 
 def test_sentence_transformer_text_embedder_prefers_new_dimension_method() -> None:
