@@ -27,7 +27,7 @@ Initial 1M build:
   --device cuda `
   --request-delay-seconds 3 `
   --embedding-batch-size 512 `
-  --checkpoint-every-records 5000 `
+  --checkpoint-every-records 25000 `
   --db-path data/paper_recommender_1m.db `
   --index-path data/vectors_1m.npz `
   --reset
@@ -42,7 +42,7 @@ Resume an interrupted 1M build:
   --device cuda `
   --request-delay-seconds 3 `
   --embedding-batch-size 512 `
-  --checkpoint-every-records 5000 `
+  --checkpoint-every-records 25000 `
   --db-path data/paper_recommender_1m.db `
   --index-path data/vectors_1m.npz
 ```
