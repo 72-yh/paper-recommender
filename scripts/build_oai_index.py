@@ -26,6 +26,8 @@ def main() -> None:
     parser.add_argument("--reset", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--checkpoint-every-batches", type=int)
+    parser.add_argument("--checkpoint-every-records", type=int)
+    parser.add_argument("--embedding-batch-size", type=int, default=512)
     parser.add_argument("--target-vector-count", type=int)
     parser.add_argument("--db-path", type=Path, default=Path("data/paper_recommender.db"))
     parser.add_argument("--index-path", type=Path, default=Path("data/vectors.npz"))
@@ -46,6 +48,8 @@ def main() -> None:
         resume=args.resume,
         request_delay_seconds=args.request_delay_seconds,
         checkpoint_every_batches=args.checkpoint_every_batches,
+        checkpoint_every_records=args.checkpoint_every_records,
+        embedding_batch_size=args.embedding_batch_size,
         target_vector_count=args.target_vector_count,
     )
     print(

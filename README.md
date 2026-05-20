@@ -11,7 +11,8 @@ Initial 1M build:
 .\.venv\Scripts\python.exe scripts\build_oai_index.py `
   --target-vector-count 1000000 `
   --request-delay-seconds 3 `
-  --checkpoint-every-batches 10 `
+  --embedding-batch-size 512 `
+  --checkpoint-every-records 5000 `
   --db-path data/paper_recommender_1m.db `
   --index-path data/vectors_1m.npz `
   --reset
@@ -24,7 +25,8 @@ Resume an interrupted 1M build:
   --target-vector-count 1000000 `
   --resume `
   --request-delay-seconds 3 `
-  --checkpoint-every-batches 10 `
+  --embedding-batch-size 512 `
+  --checkpoint-every-records 5000 `
   --db-path data/paper_recommender_1m.db `
   --index-path data/vectors_1m.npz
 ```

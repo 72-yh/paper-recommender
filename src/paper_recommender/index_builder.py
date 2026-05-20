@@ -53,6 +53,8 @@ def build_index_from_oai(
     fetch_text: Callable[[str], str] | None = None,
     request_delay_seconds: float = 0.0,
     checkpoint_every_batches: int | None = None,
+    checkpoint_every_records: int | None = None,
+    embedding_batch_size: int = 512,
     target_vector_count: int | None = None,
 ) -> IndexBuildSummary:
     db_path = Path(db_path)
@@ -89,6 +91,7 @@ def build_index_from_oai(
     if _target_vector_count_reached(items, target_vector_count):
         conn.close()
         return IndexBuildSummary(last_datestamp=last_datestamp, **stats)
+    embedding_batch_size = max(1, embedding_batch_size)
 
     try:
         stop = False
@@ -139,11 +142,24 @@ def build_index_from_oai(
                     pending_embeddings.append((vector_id, embedding_text(record)))
                     stats["embedded"] += 1
 
+                if len(pending_embeddings) >= embedding_batch_size or _pending_target_reached(
+                    items,
+                    pending_embeddings,
+                    target_vector_count,
+                ):
+                    _flush_embeddings(embedder, items, pending_embeddings)
+
+                if _should_checkpoint(stats["records_seen"], checkpoint_every_records):
+                    _flush_embeddings(embedder, items, pending_embeddings)
+                    _write_checkpoint(conn, index_path, items, last_datestamp)
+                    stats["checkpoints_written"] += 1
+
+                if _target_vector_count_reached(items, target_vector_count):
+                    stop = True
+                    break
+
             if pending_embeddings:
-                texts = [text for _, text in pending_embeddings]
-                vectors = embedder.embed_texts(texts)
-                for (vector_id, _), vector in zip(pending_embeddings, vectors, strict=True):
-                    items[vector_id] = vector
+                _flush_embeddings(embedder, items, pending_embeddings)
 
             if _should_checkpoint(stats["batches_seen"], checkpoint_every_batches):
                 _write_checkpoint(conn, index_path, items, last_datestamp)
@@ -173,6 +189,27 @@ def _target_vector_count_reached(
     target_vector_count: int | None,
 ) -> bool:
     return target_vector_count is not None and len(items) >= target_vector_count
+
+
+def _pending_target_reached(
+    items: dict[int, np.ndarray],
+    pending_embeddings: list[tuple[int, str]],
+    target_vector_count: int | None,
+) -> bool:
+    if target_vector_count is None:
+        return False
+    return len(items) + len(pending_embeddings) >= target_vector_count
+
+
+def _flush_embeddings(embedder, items: dict[int, np.ndarray], pending_embeddings: list[tuple[int, str]]) -> None:
+    if not pending_embeddings:
+        return
+
+    texts = [text for _, text in pending_embeddings]
+    vectors = embedder.embed_texts(texts)
+    for (vector_id, _), vector in zip(pending_embeddings, vectors, strict=True):
+        items[vector_id] = vector
+    pending_embeddings.clear()
 
 
 def _write_checkpoint(

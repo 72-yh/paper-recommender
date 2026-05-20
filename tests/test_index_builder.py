@@ -109,6 +109,38 @@ def _single_record_xml(
 """
 
 
+def _many_records_xml(count: int) -> str:
+    records = []
+    for index in range(1, count + 1):
+        arxiv_id = f"2401.{index:05d}"
+        records.append(
+            f"""
+    <record>
+      <header>
+        <identifier>oai:arXiv.org:{arxiv_id}</identifier>
+        <datestamp>2024-01-{index:02d}</datestamp>
+      </header>
+      <metadata>
+        <arXiv xmlns="http://arxiv.org/OAI/arXiv/">
+          <id>{arxiv_id}</id>
+          <created>2024-01-{index:02d}</created>
+          <title>Large batch paper {index}</title>
+          <abstract>Large OAI batch indexing should flush embedding chunks.</abstract>
+          <categories>cs.IR cs.DL</categories>
+        </arXiv>
+      </metadata>
+    </record>
+"""
+        )
+    return f"""
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <ListRecords>
+    {"".join(records)}
+  </ListRecords>
+</OAI-PMH>
+"""
+
+
 def test_build_index_from_oai_writes_db_vectors_and_recommendations(tmp_path) -> None:
     db_path = tmp_path / "papers.db"
     index_path = tmp_path / "vectors.npz"
@@ -381,3 +413,58 @@ def test_build_index_from_oai_skips_fetch_when_target_vector_count_already_exist
     assert fetched_urls == []
     assert summary.records_seen == 0
     assert ExactVectorIndex.load(index_path).vector_ids.tolist() == [1]
+
+
+def test_build_index_from_oai_flushes_embedding_chunks_inside_large_oai_batch(
+    tmp_path,
+) -> None:
+    class RecordingEmbedder:
+        dimensions = 4
+
+        def __init__(self) -> None:
+            self.text_batches: list[list[str]] = []
+
+        def embed_texts(self, texts: list[str]) -> np.ndarray:
+            self.text_batches.append(texts)
+            return np.eye(len(texts), self.dimensions, dtype=np.float32)
+
+    embedder = RecordingEmbedder()
+
+    summary = build_index_from_oai(
+        endpoint="https://example.test/oai",
+        db_path=tmp_path / "papers.db",
+        index_path=tmp_path / "vectors.npz",
+        embedder=embedder,
+        fetch_text=lambda _url: _many_records_xml(5),
+        embedding_batch_size=2,
+        checkpoint_every_records=2,
+    )
+
+    conn = connect_db(tmp_path / "papers.db")
+
+    assert [len(batch) for batch in embedder.text_batches] == [2, 2, 1]
+    assert summary.records_seen == 5
+    assert summary.checkpoints_written == 2
+    assert get_pipeline_state(conn, "last_successful_oai_datestamp") == "2024-01-05"
+    assert ExactVectorIndex.load(tmp_path / "vectors.npz").vector_ids.tolist() == [1, 2, 3, 4, 5]
+
+
+def test_build_index_from_oai_target_vector_count_stops_inside_large_oai_batch(
+    tmp_path,
+) -> None:
+    summary = build_index_from_oai(
+        endpoint="https://example.test/oai",
+        db_path=tmp_path / "papers.db",
+        index_path=tmp_path / "vectors.npz",
+        target_vector_count=2,
+        embedder=HashingTextEmbedder(dimensions=16),
+        fetch_text=lambda _url: _many_records_xml(5),
+        embedding_batch_size=2,
+    )
+
+    conn = connect_db(tmp_path / "papers.db")
+    index = ExactVectorIndex.load(tmp_path / "vectors.npz")
+
+    assert summary.records_seen == 2
+    assert conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0] == 2
+    assert index.vector_ids.tolist() == [1, 2]
