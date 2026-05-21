@@ -111,6 +111,10 @@ Smoke-test a running deployment:
 
 The smoke test checks `/health`, `/api/status`, and one recommendation request.
 
+Docker healthcheck support is built into both the image and Compose file. It
+uses Python's standard library inside the container to call `/health`, so no
+extra `curl` package is installed.
+
 The compose file mounts `./data` to `/app/data` and configures:
 
 ```text

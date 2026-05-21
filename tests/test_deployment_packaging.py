@@ -11,6 +11,15 @@ def test_dockerfile_packages_api_without_local_data() -> None:
     assert "data/" not in dockerfile
 
 
+def test_dockerfile_defines_python_healthcheck() -> None:
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+
+    assert "HEALTHCHECK" in dockerfile
+    assert "urllib.request" in dockerfile
+    assert "http://127.0.0.1:8000/health" in dockerfile
+    assert "curl" not in dockerfile.lower()
+
+
 def test_dockerignore_excludes_large_local_artifacts() -> None:
     ignored = Path(".dockerignore").read_text(encoding="utf-8").splitlines()
 
@@ -36,11 +45,21 @@ def test_compose_mounts_data_and_uses_int8_index() -> None:
     assert '"8000:8000"' in compose
 
 
+def test_compose_defines_runtime_healthcheck() -> None:
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "healthcheck:" in compose
+    assert "http://127.0.0.1:8000/health" in compose
+    assert "interval: 30s" in compose
+    assert "start_period: 20s" in compose
+
+
 def test_readme_documents_container_deployment() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
 
     assert "Container Deployment" in readme
     assert "docker compose up --build" in readme
+    assert "Docker healthcheck" in readme
     assert "scripts\\preflight_artifacts.py" in readme
     assert "scripts\\smoke_deployment.py" in readme
     assert "data/paper_recommender_1m.db" in readme

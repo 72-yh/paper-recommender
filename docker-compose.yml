@@ -7,5 +7,15 @@ services:
       PAPER_RECOMMENDER_DB_PATH: /app/data/paper_recommender_1m.db
       PAPER_RECOMMENDER_INDEX_PATH: /app/data/vectors_1m_int8.npz
       PAPER_RECOMMENDER_INDEX_KIND: int8
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     volumes:
       - ./data:/app/data:ro
