@@ -86,6 +86,19 @@ Run locally with Docker Compose:
 docker compose up --build
 ```
 
+Validate the mounted artifacts before starting or shipping the container:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\preflight_artifacts.py `
+  --db-path data/paper_recommender_1m.db `
+  --index-path data/vectors_1m_int8.npz `
+  --index-kind int8 `
+  --min-indexed-papers 1000000
+```
+
+The preflight check verifies the DB and index files, index format, row counts,
+and vector IDs.
+
 Smoke-test a running deployment:
 
 ```powershell
