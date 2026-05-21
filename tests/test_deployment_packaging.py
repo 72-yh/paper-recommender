@@ -41,5 +41,6 @@ def test_readme_documents_container_deployment() -> None:
 
     assert "Container Deployment" in readme
     assert "docker compose up --build" in readme
+    assert "scripts\\smoke_deployment.py" in readme
     assert "data/paper_recommender_1m.db" in readme
     assert "data/vectors_1m_int8.npz" in readme

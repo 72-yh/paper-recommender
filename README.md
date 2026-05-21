@@ -86,6 +86,18 @@ Run locally with Docker Compose:
 docker compose up --build
 ```
 
+Smoke-test a running deployment:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\smoke_deployment.py `
+  --base-url http://127.0.0.1:8000 `
+  --query-url https://arxiv.org/abs/0704.0004 `
+  --expected-index-kind int8 `
+  --min-indexed-papers 1000000
+```
+
+The smoke test checks `/health`, `/api/status`, and one recommendation request.
+
 The compose file mounts `./data` to `/app/data` and configures:
 
 ```text
