@@ -72,6 +72,32 @@ $env:PAPER_RECOMMENDER_INDEX_KIND='int8'
 .\.venv\Scripts\python.exe -m uvicorn paper_recommender.app:app --host 127.0.0.1 --port 8000
 ```
 
+## Container Deployment
+
+The container image packages only the API code. Keep generated artifacts outside
+the image and mount them read-only at runtime:
+
+- `data/paper_recommender_1m.db`
+- `data/vectors_1m_int8.npz`
+
+Run locally with Docker Compose:
+
+```powershell
+docker compose up --build
+```
+
+The compose file mounts `./data` to `/app/data` and configures:
+
+```text
+PAPER_RECOMMENDER_DB_PATH=/app/data/paper_recommender_1m.db
+PAPER_RECOMMENDER_INDEX_PATH=/app/data/vectors_1m_int8.npz
+PAPER_RECOMMENDER_INDEX_KIND=int8
+```
+
+For a low-cost server, copy or attach the two artifact files to the same paths,
+then run the same image. Do not bake the DB or vector index into the image; the
+current 1M int8 index is about 340 MB and will be replaced as the backfill grows.
+
 Daily serving-index sync after a full current backfill:
 
 ```powershell

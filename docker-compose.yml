@@ -1,0 +1,11 @@
+services:
+  paper-recommender:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      PAPER_RECOMMENDER_DB_PATH: /app/data/paper_recommender_1m.db
+      PAPER_RECOMMENDER_INDEX_PATH: /app/data/vectors_1m_int8.npz
+      PAPER_RECOMMENDER_INDEX_KIND: int8
+    volumes:
+      - ./data:/app/data:ro
