@@ -1,6 +1,7 @@
 import numpy as np
+import pytest
 
-from paper_recommender.vector_store import ExactVectorIndex
+from paper_recommender.vector_store import ExactVectorIndex, top_k_indices
 
 
 def test_exact_vector_search_orders_by_cosine_similarity() -> None:
@@ -62,6 +63,33 @@ def test_search_with_large_top_k_returns_all_vectors_sorted() -> None:
 
     assert [item.vector_id for item in results] == [2, 3, 1]
     assert results[0].score > results[1].score > results[2].score
+
+
+def test_search_uses_partial_top_k_selection(monkeypatch) -> None:
+    index = ExactVectorIndex.from_items(
+        {
+            value: np.array([float(value), 1.0], dtype=np.float32)
+            for value in range(1, 20)
+        }
+    )
+
+    def fail_argsort(*_args, **_kwargs):
+        raise AssertionError("search should not fully sort all scores for small top-k")
+
+    monkeypatch.setattr(np, "argsort", fail_argsort)
+
+    results = index.search(np.array([1.0, 0.0], dtype=np.float32), top_k=3)
+
+    assert len(results) == 3
+    assert [item.score for item in results] == sorted(
+        [item.score for item in results],
+        reverse=True,
+    )
+
+
+def test_top_k_indices_rejects_multidimensional_scores() -> None:
+    with pytest.raises(ValueError, match="scores must be one-dimensional"):
+        top_k_indices(np.array([[1.0, 2.0]], dtype=np.float32), 1)
 
 
 def test_zero_vectors_and_zero_query_return_finite_scores() -> None:

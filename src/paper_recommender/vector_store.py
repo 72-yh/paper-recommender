@@ -43,11 +43,26 @@ class ExactVectorIndex:
 
         normalized_query = _normalize_vector(query)
         scores = self.vectors @ normalized_query
-        ordered_indices = np.argsort(scores)[::-1][:top_k]
+        ordered_indices = top_k_indices(scores, top_k)
         return [
             VectorSearchResult(vector_id=int(self.vector_ids[index]), score=float(scores[index]))
             for index in ordered_indices
         ]
+
+
+def top_k_indices(scores: np.ndarray, top_k: int) -> np.ndarray:
+    scores = np.asarray(scores)
+    if scores.ndim != 1:
+        raise ValueError("scores must be one-dimensional")
+    if top_k <= 0 or len(scores) == 0:
+        return np.array([], dtype=np.int64)
+
+    limit = min(top_k, len(scores))
+    if limit == len(scores):
+        candidates = np.arange(len(scores), dtype=np.int64)
+    else:
+        candidates = np.argpartition(scores, -limit)[-limit:]
+    return candidates[scores[candidates].argsort()[::-1]]
 
 
 def _normalize_vector(vector: np.ndarray) -> np.ndarray:

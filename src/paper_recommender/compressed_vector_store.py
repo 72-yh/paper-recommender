@@ -6,9 +6,10 @@ from typing import Protocol
 
 import numpy as np
 
-from paper_recommender.vector_store import ExactVectorIndex, VectorSearchResult
+from paper_recommender.vector_store import ExactVectorIndex, VectorSearchResult, top_k_indices
 
 _INT8_SEARCH_CHUNK_SIZE = 65_536
+_RECALL_BATCH_SIZE = 32
 
 
 class SearchableIndex(Protocol):
@@ -90,7 +91,7 @@ class PcaFloatVectorIndex:
 
         query_projected = self._project_query(query)
         scores = self.vectors @ query_projected
-        ordered_indices = np.argsort(scores)[::-1][:top_k]
+        ordered_indices = top_k_indices(scores, top_k)
         return [
             VectorSearchResult(vector_id=int(self.vector_ids[index]), score=float(scores[index]))
             for index in ordered_indices
@@ -149,7 +150,7 @@ class Int8VectorIndex:
         normalized_query = _normalize_vector(query)
         weighted_query = normalized_query * self.scales
         scores = _int8_cosine_scores(self.codes, weighted_query, self._row_norms)
-        ordered_indices = np.argsort(scores)[::-1][:top_k]
+        ordered_indices = top_k_indices(scores, top_k)
         return [
             VectorSearchResult(vector_id=int(self.vector_ids[index]), score=float(scores[index]))
             for index in ordered_indices
@@ -239,7 +240,7 @@ class PcaInt8VectorIndex:
         decoded = _normalize_matrix(self._decode_rows(None))
         query_projected = self._project_query(query)
         scores = decoded @ query_projected
-        ordered_indices = np.argsort(scores)[::-1][:top_k]
+        ordered_indices = top_k_indices(scores, top_k)
         return [
             VectorSearchResult(vector_id=int(self.vector_ids[index]), score=float(scores[index]))
             for index in ordered_indices
@@ -265,15 +266,22 @@ def recall_at_k(
     if k <= 0 or not query_vector_ids:
         return RecallResult(queries=0, k=k, recall=0.0)
 
+    query_vectors = _baseline_query_vectors(baseline, query_vector_ids)
+    if len(query_vectors) == 0:
+        return RecallResult(queries=0, k=k, recall=0.0)
+
+    expected_sets = _exact_top_k_sets(baseline, query_vectors, k)
+    if isinstance(candidate, Int8VectorIndex):
+        actual_sets = _int8_top_k_sets(candidate, query_vectors, k)
+    else:
+        actual_sets = [
+            {result.vector_id for result in candidate.search(query, k)}
+            for query in query_vectors
+        ]
+
     recall_sum = 0.0
     queries = 0
-    for vector_id in query_vector_ids:
-        query = baseline.get(vector_id)
-        if query is None:
-            continue
-
-        expected = {result.vector_id for result in baseline.search(query, k)}
-        actual = {result.vector_id for result in candidate.search(query, k)}
+    for expected, actual in zip(expected_sets, actual_sets, strict=True):
         if not expected:
             continue
         recall_sum += len(expected & actual) / len(expected)
@@ -282,6 +290,74 @@ def recall_at_k(
     if queries == 0:
         return RecallResult(queries=0, k=k, recall=0.0)
     return RecallResult(queries=queries, k=k, recall=recall_sum / queries)
+
+
+def _baseline_query_vectors(
+    baseline: ExactVectorIndex,
+    query_vector_ids: list[int],
+) -> np.ndarray:
+    baseline_positions = {
+        int(vector_id): index for index, vector_id in enumerate(baseline.vector_ids)
+    }
+    queries: list[np.ndarray] = []
+    for vector_id in query_vector_ids:
+        position = baseline_positions.get(vector_id)
+        if position is None:
+            continue
+        queries.append(baseline.vectors[position])
+    return np.array(queries, dtype=np.float32)
+
+
+def _exact_top_k_sets(
+    index: ExactVectorIndex,
+    queries: np.ndarray,
+    k: int,
+) -> list[set[int]]:
+    normalized_queries = _normalize_matrix(queries)
+    results: list[set[int]] = []
+    for start in range(0, len(normalized_queries), _RECALL_BATCH_SIZE):
+        query_batch = normalized_queries[start : start + _RECALL_BATCH_SIZE]
+        scores = query_batch @ index.vectors.T
+        results.extend(_score_rows_to_vector_id_sets(scores, index.vector_ids, k))
+    return results
+
+
+def _int8_top_k_sets(
+    index: Int8VectorIndex,
+    queries: np.ndarray,
+    k: int,
+) -> list[set[int]]:
+    normalized_queries = _normalize_matrix(queries)
+    results: list[set[int]] = []
+    for start in range(0, len(normalized_queries), _RECALL_BATCH_SIZE):
+        query_batch = normalized_queries[start : start + _RECALL_BATCH_SIZE]
+        weighted_queries = query_batch * index.scales
+        scores = np.zeros((len(query_batch), len(index.vector_ids)), dtype=np.float32)
+        for chunk_start in range(0, len(index.codes), _INT8_SEARCH_CHUNK_SIZE):
+            chunk_end = chunk_start + _INT8_SEARCH_CHUNK_SIZE
+            raw_scores = np.asarray(index.codes[chunk_start:chunk_end], dtype=np.float32) @ (
+                weighted_queries.T
+            )
+            np.divide(
+                raw_scores,
+                index._row_norms[chunk_start:chunk_end, np.newaxis],
+                out=raw_scores,
+                where=index._row_norms[chunk_start:chunk_end, np.newaxis] != 0,
+            )
+            scores[:, chunk_start:chunk_end] = raw_scores.T
+        results.extend(_score_rows_to_vector_id_sets(scores, index.vector_ids, k))
+    return results
+
+
+def _score_rows_to_vector_id_sets(
+    scores: np.ndarray,
+    vector_ids: np.ndarray,
+    k: int,
+) -> list[set[int]]:
+    return [
+        {int(vector_ids[index]) for index in top_k_indices(score_row, k)}
+        for score_row in scores
+    ]
 
 
 def _original_dimensions(vectors: np.ndarray) -> int:

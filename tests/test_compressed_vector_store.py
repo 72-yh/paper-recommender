@@ -126,3 +126,31 @@ def test_recall_at_k_compares_compressed_results_to_exact_results() -> None:
     assert result.queries == 2
     assert result.k == 2
     assert 0.5 <= result.recall <= 1.0
+
+
+def test_recall_at_k_uses_direct_baseline_vector_lookup(monkeypatch) -> None:
+    exact = _baseline_index()
+    compressed = Int8VectorIndex.from_exact_index(exact)
+
+    def fail_get(*_args, **_kwargs):
+        raise AssertionError("recall should not linearly scan baseline ids for each query")
+
+    monkeypatch.setattr(exact, "get", fail_get)
+
+    result = recall_at_k(exact, compressed, query_vector_ids=[1, 3], k=2)
+
+    assert result.queries == 2
+
+
+def test_recall_at_k_batches_int8_candidate_search(monkeypatch) -> None:
+    exact = _baseline_index()
+    compressed = Int8VectorIndex.from_exact_index(exact)
+
+    def fail_search(*_args, **_kwargs):
+        raise AssertionError("recall should batch int8 candidate search")
+
+    monkeypatch.setattr(compressed, "search", fail_search)
+
+    result = recall_at_k(exact, compressed, query_vector_ids=[1, 3], k=2)
+
+    assert result.queries == 2
