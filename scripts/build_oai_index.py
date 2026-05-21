@@ -4,7 +4,11 @@ import argparse
 from pathlib import Path
 
 from paper_recommender.index_builder import build_index_from_oai
-from paper_recommender.oai_client import OAI_ENDPOINT
+from paper_recommender.oai_client import (
+    DEFAULT_FETCH_RETRIES,
+    DEFAULT_RETRY_DELAY_SECONDS,
+    OAI_ENDPOINT,
+)
 from paper_recommender.embedding import DEFAULT_MODEL_NAME
 
 
@@ -24,6 +28,8 @@ def main() -> None:
     parser.add_argument("--model-name", default=DEFAULT_MODEL_NAME)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--request-delay-seconds", type=float, default=0.0)
+    parser.add_argument("--fetch-retries", type=int, default=DEFAULT_FETCH_RETRIES)
+    parser.add_argument("--fetch-retry-delay-seconds", type=float, default=DEFAULT_RETRY_DELAY_SECONDS)
     parser.add_argument("--reset", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--checkpoint-every-batches", type=int)
@@ -49,6 +55,8 @@ def main() -> None:
         reset=args.reset,
         resume=args.resume,
         request_delay_seconds=args.request_delay_seconds,
+        fetch_retries=args.fetch_retries,
+        fetch_retry_delay_seconds=args.fetch_retry_delay_seconds,
         checkpoint_every_batches=args.checkpoint_every_batches,
         checkpoint_every_records=args.checkpoint_every_records,
         embedding_batch_size=args.embedding_batch_size,

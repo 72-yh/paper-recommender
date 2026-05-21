@@ -376,6 +376,31 @@ def test_build_index_from_oai_resume_uses_saved_datestamp_when_from_date_is_miss
     assert query["from"] == ["2024-02-03"]
 
 
+def test_build_index_from_oai_uses_configured_fetch_retry_budget(tmp_path) -> None:
+    attempts = 0
+
+    def fetch_text(_url: str) -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 5:
+            raise TimeoutError("temporary OAI read timeout")
+        return OAI_XML
+
+    summary = build_index_from_oai(
+        endpoint="https://example.test/oai",
+        db_path=tmp_path / "papers.db",
+        index_path=tmp_path / "vectors.npz",
+        from_date="2024-01-01",
+        embedder=HashingTextEmbedder(dimensions=16),
+        fetch_text=fetch_text,
+        fetch_retries=4,
+        fetch_retry_delay_seconds=0.0,
+    )
+
+    assert attempts == 5
+    assert summary.embedded == 3
+
+
 def test_build_index_from_oai_skips_fetch_when_target_vector_count_already_exists(
     tmp_path,
 ) -> None:

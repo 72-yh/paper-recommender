@@ -26,7 +26,9 @@ Initial 1M build:
   --target-vector-count 1000000 `
   --device cuda `
   --request-delay-seconds 3 `
-  --embedding-batch-size 512 `
+  --fetch-retries 10 `
+  --fetch-retry-delay-seconds 120 `
+  --embedding-batch-size 1024 `
   --checkpoint-every-records 25000 `
   --db-path data/paper_recommender_1m.db `
   --index-path data/vectors_1m.npz `
@@ -41,7 +43,9 @@ Resume an interrupted 1M build:
   --resume `
   --device cuda `
   --request-delay-seconds 3 `
-  --embedding-batch-size 512 `
+  --fetch-retries 10 `
+  --fetch-retry-delay-seconds 120 `
+  --embedding-batch-size 1024 `
   --checkpoint-every-records 25000 `
   --db-path data/paper_recommender_1m.db `
   --index-path data/vectors_1m.npz

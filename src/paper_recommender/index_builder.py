@@ -7,7 +7,12 @@ from typing import Callable
 import numpy as np
 
 from paper_recommender.embedding import DEFAULT_MODEL_NAME, embedding_text, make_embedder
-from paper_recommender.oai_client import OAI_ENDPOINT, fetch_oai_batches
+from paper_recommender.oai_client import (
+    DEFAULT_FETCH_RETRIES,
+    DEFAULT_RETRY_DELAY_SECONDS,
+    OAI_ENDPOINT,
+    fetch_oai_batches,
+)
 from paper_recommender.pipeline import apply_oai_record
 from paper_recommender.storage import (
     connect_db,
@@ -53,6 +58,8 @@ def build_index_from_oai(
     resume: bool = False,
     fetch_text: Callable[[str], str] | None = None,
     request_delay_seconds: float = 0.0,
+    fetch_retries: int = DEFAULT_FETCH_RETRIES,
+    fetch_retry_delay_seconds: float = DEFAULT_RETRY_DELAY_SECONDS,
     checkpoint_every_batches: int | None = None,
     checkpoint_every_records: int | None = None,
     embedding_batch_size: int = 512,
@@ -104,6 +111,8 @@ def build_index_from_oai(
             batch_limit=batch_limit,
             fetch_text=fetch_text,
             request_delay_seconds=request_delay_seconds,
+            fetch_retries=fetch_retries,
+            retry_delay_seconds=fetch_retry_delay_seconds,
         ):
             stats["batches_seen"] += 1
             pending_embeddings: list[tuple[int, str]] = []

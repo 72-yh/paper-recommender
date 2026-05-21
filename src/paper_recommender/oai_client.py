@@ -10,6 +10,8 @@ from paper_recommender.oai import OaiBatch, parse_oai_records
 
 OAI_ENDPOINT = "https://export.arxiv.org/oai2"
 USER_AGENT = "paper-recommender/0.1 local-index-proof"
+DEFAULT_FETCH_RETRIES = 10
+DEFAULT_RETRY_DELAY_SECONDS = 120.0
 
 
 def build_list_records_url(
@@ -39,8 +41,8 @@ def fetch_oai_batches(
     batch_limit: int | None = None,
     fetch_text: Callable[[str], str] | None = None,
     request_delay_seconds: float = 0.0,
-    fetch_retries: int = 3,
-    retry_delay_seconds: float = 30.0,
+    fetch_retries: int = DEFAULT_FETCH_RETRIES,
+    retry_delay_seconds: float = DEFAULT_RETRY_DELAY_SECONDS,
     sleep: Callable[[float], None] = time.sleep,
 ) -> Iterator[OaiBatch]:
     fetch = fetch_text or _fetch_text
