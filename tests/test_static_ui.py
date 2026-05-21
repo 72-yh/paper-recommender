@@ -20,6 +20,7 @@ def test_static_ui_uses_required_english_labels() -> None:
         "Find similar papers",
         "Similar papers",
         "Open on arXiv",
+        "Index status unavailable",
         "No results",
     ]:
         assert label in html
@@ -29,6 +30,14 @@ def test_static_ui_posts_to_recommend_endpoint() -> None:
     javascript = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 
     assert 'fetch("/api/recommend"' in javascript
+
+
+def test_static_ui_fetches_index_status() -> None:
+    javascript = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'fetch("/api/status")' in javascript
+    assert "formatIndexStatus" in javascript
+    assert "OAI through" in javascript
 
 
 def test_static_ui_normalizes_non_success_error_details() -> None:

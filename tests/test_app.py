@@ -6,7 +6,7 @@ import paper_recommender.app as app_module
 from paper_recommender.app import create_app
 from paper_recommender.compressed_vector_store import Int8VectorIndex
 from paper_recommender.models import Paper, VECTOR_MISSING_MESSAGE
-from paper_recommender.storage import connect_db, init_db, upsert_paper
+from paper_recommender.storage import connect_db, init_db, set_pipeline_state, upsert_paper
 from paper_recommender.vector_store import ExactVectorIndex
 
 
@@ -93,6 +93,37 @@ def test_health_endpoint(tmp_path) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_status_endpoint_returns_index_coverage(tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors_int8.npz"
+    conn = connect_db(db_path)
+    init_db(conn)
+    upsert_paper(conn, _paper("1706.03762", 1, date="2017-06-12"))
+    upsert_paper(conn, _paper("1111.11111", 2, date="2020-01-01"))
+    set_pipeline_state(conn, "last_successful_oai_datestamp", "2024-01-02")
+    conn.close()
+    Int8VectorIndex.from_exact_index(
+        ExactVectorIndex.from_items(
+            {
+                1: np.array([1.0, 0.0], dtype=np.float32),
+                2: np.array([0.9, 0.1], dtype=np.float32),
+            }
+        )
+    ).save(index_path)
+    client = TestClient(create_app(db_path=db_path, index_path=index_path, index_kind="int8"))
+
+    response = client.get("/api/status")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "active_papers": 2,
+        "indexed_papers": 2,
+        "last_oai_datestamp": "2024-01-02",
+        "index_kind": "int8",
+        "index_bytes": index_path.stat().st_size,
+    }
 
 
 def test_module_exports_app() -> None:

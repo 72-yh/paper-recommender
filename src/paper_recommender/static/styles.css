@@ -82,9 +82,14 @@ a:focus {
 }
 
 .status,
+.index-status,
 .meta,
 .score {
   color: #5b677a;
+}
+
+.index-status {
+  margin-bottom: 18px;
 }
 
 .results {

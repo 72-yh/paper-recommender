@@ -1,4 +1,5 @@
 const form = document.querySelector("#recommend-form");
+const indexStatusNode = document.querySelector("#index-status");
 const statusNode = document.querySelector("#status");
 const resultsNode = document.querySelector("#results");
 const template = document.querySelector("#result-template");
@@ -36,6 +37,30 @@ function errorStatusText(body) {
   }
 
   return "Request failed";
+}
+
+function formatCount(value) {
+  return Number(value || 0).toLocaleString("en-US");
+}
+
+function formatIndexStatus(status) {
+  const papers = formatCount(status.indexed_papers);
+  const kind = status.index_kind || "unknown";
+  const datestamp = status.last_oai_datestamp || "unknown";
+  return `${papers} papers | ${kind} | OAI through ${datestamp}`;
+}
+
+async function loadIndexStatus() {
+  try {
+    const response = await fetch("/api/status");
+    const body = await parseJsonOrNull(response);
+    if (!response.ok || !body) {
+      return;
+    }
+    indexStatusNode.textContent = formatIndexStatus(body);
+  } catch {
+    indexStatusNode.textContent = "Index status unavailable";
+  }
 }
 
 function renderResults(results) {
@@ -92,3 +117,5 @@ form.addEventListener("submit", async (event) => {
     setStatus("Request failed");
   }
 });
+
+loadIndexStatus();

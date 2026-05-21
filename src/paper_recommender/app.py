@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from paper_recommender.arxiv_id import InvalidArxivUrl, parse_arxiv_id
 from paper_recommender.compressed_vector_store import Int8VectorIndex
 from paper_recommender.recommender import RecommendationError, recommend
-from paper_recommender.storage import connect_db
+from paper_recommender.storage import connect_db, get_pipeline_state
 from paper_recommender.vector_store import ExactVectorIndex
 
 
@@ -21,6 +21,14 @@ class RecommendRequest(BaseModel):
     date_from: str | None = None
     date_to: str | None = None
     top_k: int = Field(default=10, ge=1, le=100)
+
+
+class IndexStatus(BaseModel):
+    active_papers: int
+    indexed_papers: int
+    last_oai_datestamp: str | None
+    index_kind: str
+    index_bytes: int
 
 
 def create_app(
@@ -43,6 +51,26 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/status")
+    def index_status() -> IndexStatus:
+        conn = connect_db(db_path)
+        try:
+            active_papers = _count_papers(conn, "active = 1")
+            indexed_papers = _count_papers(conn, "active = 1 AND vector_id IS NOT NULL")
+            last_oai_datestamp = get_pipeline_state(conn, "last_successful_oai_datestamp")
+            if last_oai_datestamp is None:
+                last_oai_datestamp = _max_oai_datestamp(conn)
+        finally:
+            conn.close()
+
+        return IndexStatus(
+            active_papers=active_papers,
+            indexed_papers=indexed_papers,
+            last_oai_datestamp=last_oai_datestamp,
+            index_kind=index_kind,
+            index_bytes=_file_size(index_path),
+        )
 
     @app.post("/api/recommend")
     def recommend_papers(request: RecommendRequest) -> dict[str, object]:
@@ -86,6 +114,23 @@ def _load_index(index_path: str | Path, index_kind: str):
     if index_kind == "int8":
         return Int8VectorIndex.load(index_path)
     raise RecommendationError(500, f"Unsupported vector index kind: {index_kind}")
+
+
+def _count_papers(conn, where_clause: str) -> int:
+    row = conn.execute(f"SELECT COUNT(*) AS value FROM papers WHERE {where_clause}").fetchone()
+    return int(row["value"])
+
+
+def _max_oai_datestamp(conn) -> str | None:
+    row = conn.execute("SELECT MAX(oai_datestamp) AS value FROM papers").fetchone()
+    return None if row is None else row["value"]
+
+
+def _file_size(path: str | Path) -> int:
+    try:
+        return Path(path).stat().st_size
+    except FileNotFoundError:
+        return 0
 
 
 app = create_app()
