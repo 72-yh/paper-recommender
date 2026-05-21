@@ -3,7 +3,7 @@ from urllib.parse import parse_qs, urlparse
 import numpy as np
 import pytest
 
-from paper_recommender.index_builder import build_index_from_oai
+from paper_recommender.index_builder import _load_existing_items, build_index_from_oai
 from paper_recommender.embedding import HashingTextEmbedder
 from paper_recommender.models import Paper
 from paper_recommender.recommender import recommend
@@ -493,6 +493,44 @@ def test_build_index_from_oai_target_vector_count_stops_inside_large_oai_batch(
     assert summary.records_seen == 2
     assert conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0] == 2
     assert index.vector_ids.tolist() == [1, 2]
+
+
+def test_load_existing_items_does_not_scan_index_once_per_paper(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors.npz"
+    conn = connect_db(db_path)
+    init_db(conn)
+    for vector_id in range(1, 4):
+        upsert_paper(
+            conn,
+            Paper(
+                arxiv_id=f"2401.{vector_id:05d}",
+                vector_id=vector_id,
+                active=True,
+                oai_datestamp="2024-01-01",
+                published_date="2024-01-01",
+                updated_date=None,
+                primary_category="cs.IR",
+                categories=("cs.IR",),
+                content_hash=f"hash-{vector_id}",
+            ),
+        )
+    ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.0, 1.0], dtype=np.float32),
+            3: np.array([1.0, 1.0], dtype=np.float32),
+        }
+    ).save(index_path)
+
+    def fail_get(*_args, **_kwargs):
+        raise AssertionError("resume loading should not scan the index once per paper")
+
+    monkeypatch.setattr(ExactVectorIndex, "get", fail_get)
+
+    items = _load_existing_items(conn, index_path, dimensions=2)
+
+    assert sorted(items) == [1, 2, 3]
 
 
 def test_build_index_from_oai_commits_embedding_chunks_in_batches(tmp_path) -> None:

@@ -247,13 +247,16 @@ def _load_existing_items(conn, index_path: Path, dimensions: int) -> dict[int, n
         return {}
 
     index = ExactVectorIndex.load(index_path)
+    available_vectors = {
+        int(vector_id): vector for vector_id, vector in zip(index.vector_ids, index.vectors, strict=True)
+    }
     items: dict[int, np.ndarray] = {}
     for paper in list_active_papers_with_vectors(conn):
         if paper.vector_id is None:
             continue
-        vector = index.get(paper.vector_id)
+        vector = available_vectors.get(paper.vector_id)
         if vector is not None and vector.shape == (dimensions,):
-            items[paper.vector_id] = vector
+            items[paper.vector_id] = vector.copy()
     return items
 
 
