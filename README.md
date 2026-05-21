@@ -71,3 +71,27 @@ $env:PAPER_RECOMMENDER_INDEX_PATH='data/vectors_1m_int8.npz'
 $env:PAPER_RECOMMENDER_INDEX_KIND='int8'
 .\.venv\Scripts\python.exe -m uvicorn paper_recommender.app:app --host 127.0.0.1 --port 8000
 ```
+
+Daily serving-index sync after a full current backfill:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\sync_serving_index.py `
+  --device cpu `
+  --request-delay-seconds 3 `
+  --fetch-retries 10 `
+  --fetch-retry-delay-seconds 120 `
+  --embedding-batch-size 128 `
+  --checkpoint-every-records 10000 `
+  --db-path data/paper_recommender_1m.db `
+  --exact-index-path data/vectors_1m.npz `
+  --serving-index-path data/vectors_1m_int8.npz `
+  --compression-method int8 `
+  --top-k 10 `
+  --sample-size 1000 `
+  --label daily-1m-int8-r10
+```
+
+Use this command only after the exact index has been backfilled to the current
+OAI datestamp. The 1M proof index currently stops at an older datestamp, so
+running the daily sync without date limits would continue the historical
+backfill rather than only process one day of changes.
