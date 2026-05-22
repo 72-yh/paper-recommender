@@ -45,6 +45,13 @@ def test_compose_mounts_data_and_uses_int8_index() -> None:
     assert '"8000:8000"' in compose
 
 
+def test_compose_uses_product_project_name() -> None:
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "name: paper_recommender" in compose
+    assert "name: arxiv" not in compose.lower()
+
+
 def test_compose_defines_runtime_healthcheck() -> None:
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
 
@@ -65,3 +72,4 @@ def test_readme_documents_container_deployment() -> None:
     assert "scripts\\smoke_deployment.py" in readme
     assert "data/paper_recommender_1m.db" in readme
     assert "data/vectors_1m_int8.npz" in readme
+    assert "Compose project name is fixed to `paper_recommender`" in readme

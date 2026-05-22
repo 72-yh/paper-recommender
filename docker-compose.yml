@@ -1,3 +1,5 @@
+name: paper_recommender
+
 services:
   paper-recommender:
     build: .

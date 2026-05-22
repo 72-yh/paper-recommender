@@ -80,6 +80,9 @@ the image and mount them read-only at runtime:
 - `data/paper_recommender_1m.db`
 - `data/vectors_1m_int8.npz`
 
+Compose project name is fixed to `paper_recommender` so generated local image,
+container, and network names do not inherit the repository directory name.
+
 Run locally with Docker Compose:
 
 ```powershell
