@@ -86,6 +86,15 @@ Run locally with Docker Compose:
 docker compose up --build
 ```
 
+Run the full local container verification flow:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\verify_container_deployment.py
+```
+
+This runs artifact preflight, `docker compose config`, `docker compose build`,
+`docker compose up -d`, `/health` polling, and the deployment smoke test.
+
 Validate the mounted artifacts before starting or shipping the container:
 
 ```powershell

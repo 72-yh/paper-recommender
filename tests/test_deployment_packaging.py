@@ -59,6 +59,7 @@ def test_readme_documents_container_deployment() -> None:
 
     assert "Container Deployment" in readme
     assert "docker compose up --build" in readme
+    assert "scripts\\verify_container_deployment.py" in readme
     assert "Docker healthcheck" in readme
     assert "scripts\\preflight_artifacts.py" in readme
     assert "scripts\\smoke_deployment.py" in readme
