@@ -12,6 +12,13 @@ def test_dockerfile_packages_api_without_local_data() -> None:
     assert "data/" not in dockerfile
 
 
+def test_python_package_includes_static_ui_assets() -> None:
+    config = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    package_data = config["tool"]["setuptools"]["package-data"]
+    assert "static/*" in package_data["paper_recommender"]
+
+
 def test_dockerfile_defines_python_healthcheck() -> None:
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
 
