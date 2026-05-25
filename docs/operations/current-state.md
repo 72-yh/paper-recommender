@@ -17,7 +17,7 @@ No managed database, Redis, object store, GPU, extra Machine, extra region, or d
 ## Data
 
 - Current deployment artifact: 1M proof index, not the full current arXiv corpus
-- SQLite database: `paper_recommender_1m.db`, about 210MB locally
+- SQLite database: `paper_recommender_1m.db`, about 411MB locally after `paper_categories` backfill
 - Vector index: `vectors_1m_int8_mmap/`, 396,002,048 bytes after conversion
 - Category lookup: `paper_categories`, a derived SQLite table for active indexed paper categories
 - Status endpoint after deployment: 1,000,000 active papers and 1,000,000 indexed papers
@@ -29,7 +29,7 @@ The 1M proof is useful for serving and deployment validation, but newer arXiv ID
 
 The full-corpus target remains the same low-cost architecture: one small Fly Machine, local SQLite, local int8 mmap vectors, no managed database, and no managed vector service.
 
-The current 2GB volume may be too tight for roughly 3M papers. A simple 3x estimate puts vectors alone near 1.2GB before SQLite, derived category lookup rows, filesystem overhead, and future operational headroom. The expected next storage step is therefore a 4GB volume, not a new paid service. At the current Fly volume price of `$0.15/GB/month`, moving from 2GB to 4GB would add about `$0.30/month`.
+The current 2GB volume may be too tight for roughly 3M papers. The latest local preflight measured the 1M proof artifact at 807,158,528 bytes after category lookup backfill and projected a 3M corpus at 2,421,475,584 bytes. The expected next storage step is therefore a 4GB volume, not a new paid service. At the current Fly volume price of `$0.15/GB/month`, moving from 2GB to 4GB would add about `$0.30/month`.
 
 Keeping `min_machines_running = 0` remains the main compute cost guardrail. If the 1GB `shared-cpu-1x` Machine were left running for a full month in the current region, the listed monthly compute price is still below the user budget, but the operational target is lower than always-on usage because expected traffic is about 100 users and the app can auto-stop.
 
@@ -59,6 +59,7 @@ memory-mapped instead of unpacked from one compressed file at process start.
 - Production filtered recommendation after candidate prefiltering: 2.433s for `0704.0004` with categories `cs.CL + cs.LG`, returning 10 results.
 - Production category lookup backfill after deploying `paper_categories`: first `/api/categories` call rebuilt the lookup in 35.63s for the 1M proof database; the next `/api/categories` call returned in 0.502s.
 - Production warm filtered recommendation after indexed category lookup: 0.56s for `0704.0004` with categories `cs.CL + cs.LG`, returning 10 results.
+- Local 3M storage projection preflight: `target_indexed_papers=3000000`, `projected_total_artifact_bytes=2421475584`, `max_volume_gb=4.0`, category lookup rows `1558846`.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 

@@ -5,10 +5,11 @@ import sqlite3
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from itertools import zip_longest
 
 import numpy as np
 
-from paper_recommender.storage import connect_db, get_pipeline_state
+from paper_recommender.storage import connect_db, get_pipeline_state, list_active_category_counts
 
 
 class ArtifactPreflightError(Exception):
@@ -24,9 +25,16 @@ class ArtifactPreflightSummary:
     indexed_papers: int
     index_vectors: int
     dimensions: int
+    db_bytes: int
     index_bytes: int
+    total_artifact_bytes: int
     last_oai_datestamp: str | None
     vector_ids_checked: bool
+    category_lookup_checked: bool
+    category_lookup_rows: int | None
+    target_indexed_papers: int | None
+    projected_total_artifact_bytes: int | None
+    max_volume_gb: float | None
 
 
 @dataclass(frozen=True)
@@ -35,6 +43,7 @@ class _DbInfo:
     indexed_papers: int
     last_oai_datestamp: str | None
     vector_ids: np.ndarray | None
+    category_lookup_rows: int | None
 
 
 @dataclass(frozen=True)
@@ -52,14 +61,23 @@ def preflight_artifacts(
     index_kind: str = "int8",
     min_indexed_papers: int = 1,
     check_vector_ids: bool = True,
+    check_category_lookup: bool = True,
+    target_indexed_papers: int | None = None,
+    max_volume_gb: float | None = None,
 ) -> ArtifactPreflightSummary:
     db_path = Path(db_path)
     index_path = Path(index_path)
     _require_file(db_path, "DB")
     _require_index_path(index_path, index_kind)
 
-    db_info = _inspect_db(db_path, include_vector_ids=check_vector_ids)
+    db_info = _inspect_db(
+        db_path,
+        include_vector_ids=check_vector_ids,
+        check_category_lookup=check_category_lookup,
+    )
     index_info = _inspect_index(index_path, index_kind=index_kind)
+    db_bytes = db_path.stat().st_size
+    total_artifact_bytes = db_bytes + index_info.bytes
 
     if db_info.indexed_papers < min_indexed_papers:
         raise ArtifactPreflightError(
@@ -72,6 +90,19 @@ def preflight_artifacts(
         )
     if check_vector_ids:
         _check_vector_ids(db_info, index_info)
+    projected_total_artifact_bytes = _project_total_artifact_bytes(
+        total_artifact_bytes=total_artifact_bytes,
+        indexed_papers=db_info.indexed_papers,
+        target_indexed_papers=target_indexed_papers,
+    )
+    if projected_total_artifact_bytes is not None and max_volume_gb is not None:
+        max_volume_bytes = int(max_volume_gb * 1024 * 1024 * 1024)
+        if projected_total_artifact_bytes > max_volume_bytes:
+            raise ArtifactPreflightError(
+                "Projected artifact size exceeds volume budget: "
+                f"projected_bytes={projected_total_artifact_bytes} "
+                f"max_volume_gb={max_volume_gb}"
+            )
 
     return ArtifactPreflightSummary(
         db_path=db_path,
@@ -81,9 +112,16 @@ def preflight_artifacts(
         indexed_papers=db_info.indexed_papers,
         index_vectors=index_info.vectors,
         dimensions=index_info.dimensions,
+        db_bytes=db_bytes,
         index_bytes=index_info.bytes,
+        total_artifact_bytes=total_artifact_bytes,
         last_oai_datestamp=db_info.last_oai_datestamp,
         vector_ids_checked=check_vector_ids,
+        category_lookup_checked=check_category_lookup,
+        category_lookup_rows=db_info.category_lookup_rows,
+        target_indexed_papers=target_indexed_papers,
+        projected_total_artifact_bytes=projected_total_artifact_bytes,
+        max_volume_gb=max_volume_gb,
     )
 
 
@@ -104,7 +142,12 @@ def _require_index_path(path: Path, index_kind: str) -> None:
     _require_file(path, "Index")
 
 
-def _inspect_db(path: Path, *, include_vector_ids: bool) -> _DbInfo:
+def _inspect_db(
+    path: Path,
+    *,
+    include_vector_ids: bool,
+    check_category_lookup: bool,
+) -> _DbInfo:
     conn = connect_db(path)
     try:
         active_papers = _count_papers(conn, "active = 1")
@@ -113,6 +156,9 @@ def _inspect_db(path: Path, *, include_vector_ids: bool) -> _DbInfo:
         if last_oai_datestamp is None:
             last_oai_datestamp = _max_oai_datestamp(conn)
         vector_ids = _db_vector_ids(conn, indexed_papers) if include_vector_ids else None
+        category_lookup_rows = (
+            _check_category_lookup(conn) if check_category_lookup else None
+        )
     except sqlite3.Error as exc:
         raise ArtifactPreflightError(f"Could not inspect DB {path}: {exc}") from exc
     finally:
@@ -122,6 +168,7 @@ def _inspect_db(path: Path, *, include_vector_ids: bool) -> _DbInfo:
         indexed_papers=indexed_papers,
         last_oai_datestamp=last_oai_datestamp,
         vector_ids=vector_ids,
+        category_lookup_rows=category_lookup_rows,
     )
 
 
@@ -242,6 +289,65 @@ def _db_vector_ids(conn, count: int) -> np.ndarray:
     return np.fromiter((int(row["vector_id"]) for row in rows), dtype=np.int64, count=count)
 
 
+def _check_category_lookup(conn) -> int:
+    list_active_category_counts(conn)
+    expected_rows = _expected_category_rows(conn)
+    actual_rows = _actual_category_rows(conn)
+    missing = object()
+    count = 0
+    for expected, actual in zip_longest(expected_rows, actual_rows, fillvalue=missing):
+        if expected != actual:
+            raise ArtifactPreflightError(
+                "Category lookup mismatch: "
+                f"expected_row={None if expected is missing else expected} "
+                f"actual_row={None if actual is missing else actual}"
+            )
+        count += 1
+    return count
+
+
+def _expected_category_rows(conn):
+    rows = conn.execute(
+        """
+        SELECT arxiv_id, vector_id, published_date, categories
+        FROM papers
+        WHERE active = 1 AND vector_id IS NOT NULL
+        ORDER BY arxiv_id
+        """
+    )
+    for row in rows:
+        categories = sorted(dict.fromkeys(part for part in row["categories"].split(" ") if part))
+        for category in categories:
+            yield (row["arxiv_id"], category, int(row["vector_id"]), row["published_date"])
+
+
+def _actual_category_rows(conn):
+    rows = conn.execute(
+        """
+        SELECT arxiv_id, category, vector_id, published_date
+        FROM paper_categories
+        ORDER BY arxiv_id, category
+        """
+    )
+    for row in rows:
+        yield (row["arxiv_id"], row["category"], int(row["vector_id"]), row["published_date"])
+
+
+def _project_total_artifact_bytes(
+    *,
+    total_artifact_bytes: int,
+    indexed_papers: int,
+    target_indexed_papers: int | None,
+) -> int | None:
+    if target_indexed_papers is None:
+        return None
+    if target_indexed_papers <= indexed_papers:
+        return total_artifact_bytes
+    if indexed_papers <= 0:
+        raise ArtifactPreflightError("Cannot project artifact size without indexed papers")
+    return int(np.ceil(total_artifact_bytes * (target_indexed_papers / indexed_papers)))
+
+
 def _directory_bytes(path: Path) -> int:
     return sum(child.stat().st_size for child in path.iterdir() if child.is_file())
 
@@ -255,6 +361,9 @@ def main() -> None:
     parser.add_argument("--index-kind", choices=("exact", "int8", "int8_mmap"), default="int8")
     parser.add_argument("--min-indexed-papers", type=int, default=1)
     parser.add_argument("--skip-vector-id-check", action="store_true")
+    parser.add_argument("--skip-category-lookup-check", action="store_true")
+    parser.add_argument("--target-indexed-papers", type=int)
+    parser.add_argument("--max-volume-gb", type=float)
     args = parser.parse_args()
 
     try:
@@ -264,6 +373,9 @@ def main() -> None:
             index_kind=args.index_kind,
             min_indexed_papers=args.min_indexed_papers,
             check_vector_ids=not args.skip_vector_id_check,
+            check_category_lookup=not args.skip_category_lookup_check,
+            target_indexed_papers=args.target_indexed_papers,
+            max_volume_gb=args.max_volume_gb,
         )
     except ArtifactPreflightError as exc:
         print(f"Artifact preflight failed: {exc}", file=sys.stderr)
@@ -278,9 +390,16 @@ def main() -> None:
         f"indexed_papers={summary.indexed_papers} "
         f"index_vectors={summary.index_vectors} "
         f"dimensions={summary.dimensions} "
+        f"db_bytes={summary.db_bytes} "
         f"index_bytes={summary.index_bytes} "
+        f"total_artifact_bytes={summary.total_artifact_bytes} "
         f"last_oai_datestamp={summary.last_oai_datestamp} "
-        f"vector_ids_checked={summary.vector_ids_checked}"
+        f"vector_ids_checked={summary.vector_ids_checked} "
+        f"category_lookup_checked={summary.category_lookup_checked} "
+        f"category_lookup_rows={summary.category_lookup_rows} "
+        f"target_indexed_papers={summary.target_indexed_papers} "
+        f"projected_total_artifact_bytes={summary.projected_total_artifact_bytes} "
+        f"max_volume_gb={summary.max_volume_gb}"
     )
 
 

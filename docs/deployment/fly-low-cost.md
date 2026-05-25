@@ -37,9 +37,26 @@ For the no-new-resource load optimization, convert the int8 index locally to
 `PAPER_RECOMMENDER_INDEX_KIND=int8_mmap` only after all four `.npy` files are on
 the volume.
 
-Current local artifact sizes are about 551 MB total, so a 2GB volume is enough
-for the 1M proof deployment. A larger backfill requires an explicit volume-size
-review before upload.
+Current local 1M artifact sizes are about 807 MB total after `paper_categories`
+backfill, so a 2GB volume is enough for the 1M proof deployment. The latest
+3M projection is about 2.42 GB, so a full-corpus upload should use a 4GB volume
+unless a fresh preflight says otherwise. A larger backfill requires an explicit
+volume-size review before upload.
+
+Before any larger upload, run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\preflight_artifacts.py `
+  --db-path data\paper_recommender_1m.db `
+  --index-path data\vectors_1m_int8_mmap `
+  --index-kind int8_mmap `
+  --min-indexed-papers 1000000 `
+  --target-indexed-papers 3000000 `
+  --max-volume-gb 4
+```
+
+This checks DB/index consistency, verifies the indexed category lookup table,
+and estimates whether the target corpus fits the reviewed volume budget.
 
 ## Safe Preparation
 

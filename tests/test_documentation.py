@@ -35,6 +35,8 @@ def test_fly_runbook_documents_current_operational_lessons() -> None:
 
     assert "--local-only" in runbook
     assert "Do not use a remote builder" in runbook
+    assert "--target-indexed-papers 3000000" in runbook
+    assert "--max-volume-gb 4" in runbook
     assert "Machine may auto-stop during long SFTP uploads" in runbook
     assert "first recommendation requests can load the index" in runbook
 
@@ -48,5 +50,6 @@ def test_current_state_doc_records_faiss_and_latency_status() -> None:
     assert "prefilter candidate `vector_id`s" in current_state
     assert "3M Budget Path" in current_state
     assert "$0.30/month" in current_state
+    assert "projected_total_artifact_bytes=2421475584" in current_state
     assert "Cold start" in current_state
     assert "Warm recommendation" in current_state

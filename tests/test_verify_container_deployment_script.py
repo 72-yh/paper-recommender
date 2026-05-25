@@ -141,9 +141,16 @@ def _preflight_summary(db_path, index_path) -> ArtifactPreflightSummary:
         indexed_papers=1_000_000,
         index_vectors=1_000_000,
         dimensions=384,
+        db_bytes=411_156_480,
         index_bytes=340_151_071,
+        total_artifact_bytes=751_307_551,
         last_oai_datestamp="2016-01-27",
         vector_ids_checked=True,
+        category_lookup_checked=True,
+        category_lookup_rows=1_558_846,
+        target_indexed_papers=None,
+        projected_total_artifact_bytes=None,
+        max_volume_gb=None,
     )
 
 

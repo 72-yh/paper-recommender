@@ -29,6 +29,8 @@ def test_preflight_artifacts_accepts_matching_int8_db_and_index(tmp_path) -> Non
     assert summary.index_vectors == 3
     assert summary.dimensions == 3
     assert summary.last_oai_datestamp == "2024-01-03"
+    assert summary.category_lookup_checked is True
+    assert summary.category_lookup_rows == 3
 
 
 def test_preflight_artifacts_accepts_matching_int8_mmap_db_and_index(tmp_path) -> None:
@@ -49,6 +51,64 @@ def test_preflight_artifacts_accepts_matching_int8_mmap_db_and_index(tmp_path) -
     assert summary.indexed_papers == 3
     assert summary.index_vectors == 3
     assert summary.dimensions == 3
+
+
+def test_preflight_artifacts_projects_target_corpus_storage(tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors_int8.npz"
+    exact = _exact_index()
+    _write_db(db_path, vector_ids=(1, 2, 3))
+    Int8VectorIndex.from_exact_index(exact).save(index_path)
+
+    summary = preflight_artifacts(
+        db_path=db_path,
+        index_path=index_path,
+        index_kind="int8",
+        target_indexed_papers=6,
+        max_volume_gb=1,
+    )
+
+    assert summary.target_indexed_papers == 6
+    assert summary.projected_total_artifact_bytes is not None
+    assert summary.projected_total_artifact_bytes >= summary.total_artifact_bytes
+
+
+def test_preflight_artifacts_rejects_projection_above_volume_limit(tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors_int8.npz"
+    exact = _exact_index()
+    _write_db(db_path, vector_ids=(1, 2, 3))
+    Int8VectorIndex.from_exact_index(exact).save(index_path)
+
+    with pytest.raises(ArtifactPreflightError, match="Projected artifact size"):
+        preflight_artifacts(
+            db_path=db_path,
+            index_path=index_path,
+            index_kind="int8",
+            target_indexed_papers=3_000_000,
+            max_volume_gb=0.000001,
+        )
+
+
+def test_preflight_artifacts_rejects_stale_category_lookup(tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors_int8.npz"
+    exact = _exact_index()
+    _write_db(db_path, vector_ids=(1, 2, 3))
+    Int8VectorIndex.from_exact_index(exact).save(index_path)
+    conn = connect_db(db_path)
+    try:
+        conn.execute("DELETE FROM paper_categories WHERE arxiv_id = ?", ("0000.00001",))
+        conn.commit()
+    finally:
+        conn.close()
+
+    with pytest.raises(ArtifactPreflightError, match="Category lookup mismatch"):
+        preflight_artifacts(
+            db_path=db_path,
+            index_path=index_path,
+            index_kind="int8",
+        )
 
 
 def test_preflight_artifacts_accepts_matching_exact_db_and_index(tmp_path) -> None:
