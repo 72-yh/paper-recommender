@@ -151,6 +151,32 @@ def test_status_endpoint_returns_index_coverage(tmp_path) -> None:
     }
 
 
+def test_status_endpoint_reports_mmap_index_directory_size(tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors_int8_mmap"
+    conn = connect_db(db_path)
+    init_db(conn)
+    upsert_paper(conn, _paper("1706.03762", 1, date="2017-06-12"))
+    upsert_paper(conn, _paper("1111.11111", 2, date="2020-01-01"))
+    conn.close()
+    Int8VectorIndex.from_exact_index(
+        ExactVectorIndex.from_items(
+            {
+                1: np.array([1.0, 0.0], dtype=np.float32),
+                2: np.array([0.9, 0.1], dtype=np.float32),
+            }
+        )
+    ).save_mmap(index_path)
+    expected_index_bytes = sum(child.stat().st_size for child in index_path.iterdir())
+    client = TestClient(create_app(db_path=db_path, index_path=index_path, index_kind="int8_mmap"))
+
+    response = client.get("/api/status")
+
+    assert response.status_code == 200
+    assert response.json()["index_kind"] == "int8_mmap"
+    assert response.json()["index_bytes"] == expected_index_bytes
+
+
 def test_module_exports_app() -> None:
     assert app_module.app is not None
 

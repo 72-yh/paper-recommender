@@ -90,6 +90,8 @@ def test_fly_config_uses_low_cost_single_machine() -> None:
 
     assert config["app"].startswith("paper-recommender")
     assert "arxiv" not in config["app"]
+    assert config["env"]["PAPER_RECOMMENDER_INDEX_PATH"] == "/app/data/vectors_1m_int8_mmap"
+    assert config["env"]["PAPER_RECOMMENDER_INDEX_KIND"] == "int8_mmap"
 
     service = config["http_service"]
     assert service["internal_port"] == 8000

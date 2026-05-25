@@ -134,7 +134,10 @@ def _max_oai_datestamp(conn) -> str | None:
 
 def _file_size(path: str | Path) -> int:
     try:
-        return Path(path).stat().st_size
+        path = Path(path)
+        if path.is_dir():
+            return sum(child.stat().st_size for child in path.iterdir() if child.is_file())
+        return path.stat().st_size
     except FileNotFoundError:
         return 0
 

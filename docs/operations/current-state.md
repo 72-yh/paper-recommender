@@ -18,7 +18,7 @@ No managed database, Redis, object store, GPU, extra Machine, extra region, or d
 
 - Current deployment artifact: 1M proof index, not the full current arXiv corpus
 - SQLite database: `paper_recommender_1m.db`, about 210MB locally
-- Vector index: `vectors_1m_int8.npz`, about 340MB locally
+- Vector index: `vectors_1m_int8_mmap/`, 396,002,048 bytes after conversion
 - Status endpoint after deployment: 1,000,000 active papers and 1,000,000 indexed papers
 - Last OAI datestamp in the 1M proof: `2016-01-27`
 
@@ -26,20 +26,17 @@ The 1M proof is useful for serving and deployment validation, but newer arXiv ID
 
 ## Search Path
 
-The current serving path is a 1M int8 NumPy full-scan index. FAISS is not currently deployed.
+The current serving path is a 1M int8 NumPy full-scan index loaded from the `int8_mmap` directory format. FAISS is not currently deployed.
 
 This means:
 
 - Recommendation quality is still based on exact cosine comparison over the int8 vectors.
-- Latency depends on loading and scanning the local `.npz` artifact.
+- Latency depends on loading and scanning the local mmap `.npy` artifact set.
 - ANN work remains a future optimization, not a completed part of the MVP.
 
-The next no-new-resource optimization is `int8_mmap`: convert
-`vectors_1m_int8.npz` into a directory of `.npy` arrays and serve it with
-`PAPER_RECOMMENDER_INDEX_KIND=int8_mmap`. This keeps int8 quantization and the
-same full-scan ranking behavior, but stores precomputed row norms and allows the
-large arrays to be memory-mapped instead of unpacked from one compressed file at
-process start.
+The `int8_mmap` format keeps int8 quantization and the same full-scan ranking
+behavior, but stores precomputed row norms and allows the large arrays to be
+memory-mapped instead of unpacked from one compressed file at process start.
 
 ## Performance Evidence
 
@@ -47,6 +44,8 @@ process start.
 - Warm recommendation: after the index was already loaded, two concurrent recommendation requests both returned HTTP 200 in about 1.3 seconds.
 - Smoke test: deployment smoke test returned `indexed_papers=1000000`, `index_kind=int8`, and `result_count=3` for `0704.0004`.
 - Local artifact benchmark after adding `int8_mmap`: `.npz` load 3.079s and search 0.457s; mmap load 0.002s and search 0.544s on the local 1M artifact.
+- Production `int8_mmap` smoke test: returned `indexed_papers=1000000`, `index_kind=int8_mmap`, `index_bytes=396002048`, and `result_count=3` for `0704.0004`.
+- Production warm recommendation after the switch: 0.856s for `0704.0004` with 3 returned results.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 
@@ -55,9 +54,6 @@ The cold-start number includes Machine auto-start and first index load. Warm rec
 - The deployed proof covers 1M papers up to OAI datestamp `2016-01-27`, not all roughly 3M current arXiv records.
 - The web UI always requests 10 recommendations and does not expose a Top K control.
 - First request after an idle stop can be slow.
-- `int8_mmap` support is implemented for the next artifact conversion, but the
-  currently deployed artifact is still the `.npz` int8 index until the converted
-  directory is uploaded and the Fly env is switched.
 - FAISS, USearch, or another ANN index still needs recall and latency evaluation before replacement.
 
 ## Next Step

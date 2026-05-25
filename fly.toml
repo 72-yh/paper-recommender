@@ -8,8 +8,8 @@ kill_timeout = "5s"
 
 [env]
   PAPER_RECOMMENDER_DB_PATH = "/app/data/paper_recommender_1m.db"
-  PAPER_RECOMMENDER_INDEX_PATH = "/app/data/vectors_1m_int8.npz"
-  PAPER_RECOMMENDER_INDEX_KIND = "int8"
+  PAPER_RECOMMENDER_INDEX_PATH = "/app/data/vectors_1m_int8_mmap"
+  PAPER_RECOMMENDER_INDEX_KIND = "int8_mmap"
 
 [[mounts]]
   source = "paper_recommender_data"
