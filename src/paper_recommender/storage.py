@@ -40,6 +40,26 @@ CREATE TABLE IF NOT EXISTS preview_cache (
 );
 """
 
+CATEGORY_LOOKUP_SCHEMA = """
+CREATE TABLE IF NOT EXISTS paper_categories (
+    arxiv_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    vector_id INTEGER NOT NULL,
+    published_date TEXT,
+    PRIMARY KEY (arxiv_id, category),
+    FOREIGN KEY (arxiv_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_paper_categories_lookup
+ON paper_categories(category, published_date, vector_id);
+
+CREATE INDEX IF NOT EXISTS idx_papers_active_published_vector
+ON papers(published_date, vector_id)
+WHERE active = 1 AND vector_id IS NOT NULL;
+"""
+
+CATEGORY_LOOKUP_BACKFILL_STATE_KEY = "paper_categories_backfilled_v1"
+
 
 def connect_db(path: str | Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
@@ -50,7 +70,7 @@ def connect_db(path: str | Path) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
-    conn.commit()
+    _ensure_category_lookup_backfilled(conn)
 
 
 def _encode_categories(categories: tuple[str, ...]) -> str:
@@ -108,6 +128,7 @@ def upsert_paper(conn: sqlite3.Connection, paper: Paper, *, commit: bool = True)
             paper.content_hash,
         ),
     )
+    _sync_paper_categories(conn, paper.arxiv_id)
     if commit:
         conn.commit()
 
@@ -135,18 +156,16 @@ def list_active_papers_with_vectors(conn: sqlite3.Connection) -> list[Paper]:
 
 
 def list_active_category_counts(conn: sqlite3.Connection) -> list[tuple[str, int]]:
+    _ensure_category_lookup_backfilled(conn)
     rows = conn.execute(
         """
-        SELECT categories
-        FROM papers
-        WHERE active = 1 AND vector_id IS NOT NULL
+        SELECT category, COUNT(*) AS count
+        FROM paper_categories
+        GROUP BY category
+        ORDER BY category
         """
-    )
-    counts: dict[str, int] = {}
-    for row in rows:
-        for category in _decode_categories(row["categories"]):
-            counts[category] = counts.get(category, 0) + 1
-    return sorted(counts.items())
+    ).fetchall()
+    return [(row["category"], int(row["count"])) for row in rows]
 
 
 def list_filtered_vector_ids(
@@ -159,6 +178,16 @@ def list_filtered_vector_ids(
 ) -> list[int] | None:
     if not categories and date_from is None and date_to is None:
         return None
+
+    _ensure_category_lookup_backfilled(conn)
+    if categories:
+        return _list_filtered_category_vector_ids(
+            conn,
+            categories=categories,
+            date_from=date_from,
+            date_to=date_to,
+            exclude_vector_id=exclude_vector_id,
+        )
 
     where = ["active = 1", "vector_id IS NOT NULL"]
     params: list[object] = []
@@ -176,21 +205,14 @@ def list_filtered_vector_ids(
 
     rows = conn.execute(
         f"""
-        SELECT vector_id, categories
+        SELECT vector_id
         FROM papers
         WHERE {' AND '.join(where)}
         ORDER BY vector_id
         """,
         params,
-    )
-
-    selected = set(categories)
-    vector_ids: list[int] = []
-    for row in rows:
-        if selected and not any(category in selected for category in _decode_categories(row["categories"])):
-            continue
-        vector_ids.append(int(row["vector_id"]))
-    return vector_ids
+    ).fetchall()
+    return [int(row["vector_id"]) for row in rows]
 
 
 def max_vector_id(conn: sqlite3.Connection) -> int:
@@ -213,6 +235,7 @@ def set_paper_vector_id(
         """,
         (vector_id, arxiv_id),
     )
+    _sync_paper_categories(conn, arxiv_id)
     if commit:
         conn.commit()
 
@@ -264,6 +287,7 @@ def mark_deleted(
             "INSERT INTO index_deletes (arxiv_id, vector_id) VALUES (?, ?)",
             (arxiv_id, existing.vector_id),
         )
+    conn.execute("DELETE FROM paper_categories WHERE arxiv_id = ?", (arxiv_id,))
     if commit:
         conn.commit()
 
@@ -290,3 +314,109 @@ def set_pipeline_state(
 def get_pipeline_state(conn: sqlite3.Connection, key: str) -> str | None:
     row: Any = conn.execute("SELECT value FROM pipeline_state WHERE key = ?", (key,)).fetchone()
     return None if row is None else row["value"]
+
+
+def _ensure_category_lookup_backfilled(conn: sqlite3.Connection) -> None:
+    conn.executescript(CATEGORY_LOOKUP_SCHEMA)
+    if get_pipeline_state(conn, CATEGORY_LOOKUP_BACKFILL_STATE_KEY) == "1":
+        return
+
+    _rebuild_category_lookup(conn)
+    set_pipeline_state(conn, CATEGORY_LOOKUP_BACKFILL_STATE_KEY, "1", commit=False)
+    conn.commit()
+
+
+def _rebuild_category_lookup(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM paper_categories")
+    rows = conn.execute(
+        """
+        SELECT arxiv_id, vector_id, published_date, categories
+        FROM papers
+        WHERE active = 1 AND vector_id IS NOT NULL
+        """
+    )
+    for row in rows:
+        _insert_category_lookup_rows(
+            conn,
+            arxiv_id=row["arxiv_id"],
+            vector_id=int(row["vector_id"]),
+            published_date=row["published_date"],
+            categories=_decode_categories(row["categories"]),
+        )
+
+
+def _sync_paper_categories(conn: sqlite3.Connection, arxiv_id: str) -> None:
+    conn.execute("DELETE FROM paper_categories WHERE arxiv_id = ?", (arxiv_id,))
+    row = conn.execute(
+        """
+        SELECT arxiv_id, vector_id, active, published_date, categories
+        FROM papers
+        WHERE arxiv_id = ?
+        """,
+        (arxiv_id,),
+    ).fetchone()
+    if row is None or not row["active"] or row["vector_id"] is None:
+        return
+
+    _insert_category_lookup_rows(
+        conn,
+        arxiv_id=row["arxiv_id"],
+        vector_id=int(row["vector_id"]),
+        published_date=row["published_date"],
+        categories=_decode_categories(row["categories"]),
+    )
+
+
+def _insert_category_lookup_rows(
+    conn: sqlite3.Connection,
+    *,
+    arxiv_id: str,
+    vector_id: int,
+    published_date: str | None,
+    categories: tuple[str, ...],
+) -> None:
+    unique_categories = tuple(dict.fromkeys(categories))
+    if not unique_categories:
+        return
+    conn.executemany(
+        """
+        INSERT INTO paper_categories (arxiv_id, category, vector_id, published_date)
+        VALUES (?, ?, ?, ?)
+        """,
+        [(arxiv_id, category, vector_id, published_date) for category in unique_categories],
+    )
+
+
+def _list_filtered_category_vector_ids(
+    conn: sqlite3.Connection,
+    *,
+    categories: tuple[str, ...],
+    date_from: str | None,
+    date_to: str | None,
+    exclude_vector_id: int | None,
+) -> list[int]:
+    placeholders = ", ".join("?" for _ in categories)
+    where = [f"category IN ({placeholders})"]
+    params: list[object] = list(categories)
+    if exclude_vector_id is not None:
+        where.append("vector_id != ?")
+        params.append(exclude_vector_id)
+    if date_from is not None or date_to is not None:
+        where.append("published_date IS NOT NULL")
+    if date_from is not None:
+        where.append("published_date >= ?")
+        params.append(date_from)
+    if date_to is not None:
+        where.append("published_date <= ?")
+        params.append(date_to)
+
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT vector_id
+        FROM paper_categories
+        WHERE {' AND '.join(where)}
+        ORDER BY vector_id
+        """,
+        params,
+    ).fetchall()
+    return [int(row["vector_id"]) for row in rows]

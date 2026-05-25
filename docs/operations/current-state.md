@@ -19,10 +19,19 @@ No managed database, Redis, object store, GPU, extra Machine, extra region, or d
 - Current deployment artifact: 1M proof index, not the full current arXiv corpus
 - SQLite database: `paper_recommender_1m.db`, about 210MB locally
 - Vector index: `vectors_1m_int8_mmap/`, 396,002,048 bytes after conversion
+- Category lookup: `paper_categories`, a derived SQLite table for active indexed paper categories
 - Status endpoint after deployment: 1,000,000 active papers and 1,000,000 indexed papers
 - Last OAI datestamp in the 1M proof: `2016-01-27`
 
 The 1M proof is useful for serving and deployment validation, but newer arXiv IDs may be missing until the corpus is extended.
+
+## 3M Budget Path
+
+The full-corpus target remains the same low-cost architecture: one small Fly Machine, local SQLite, local int8 mmap vectors, no managed database, and no managed vector service.
+
+The current 2GB volume may be too tight for roughly 3M papers. A simple 3x estimate puts vectors alone near 1.2GB before SQLite, derived category lookup rows, filesystem overhead, and future operational headroom. The expected next storage step is therefore a 4GB volume, not a new paid service. At the current Fly volume price of `$0.15/GB/month`, moving from 2GB to 4GB would add about `$0.30/month`.
+
+Keeping `min_machines_running = 0` remains the main compute cost guardrail. If the 1GB `shared-cpu-1x` Machine were left running for a full month in the current region, the listed monthly compute price is still below the user budget, but the operational target is lower than always-on usage because expected traffic is about 100 users and the app can auto-stop.
 
 ## Search Path
 
@@ -32,7 +41,7 @@ This means:
 
 - Recommendation quality is still based on exact cosine comparison over int8 vectors.
 - Unfiltered recommendations scan the local mmap `.npy` artifact set.
-- Category and date filters prefilter candidate `vector_id`s in SQLite, then score only that filtered vector subset.
+- Category and date filters prefilter candidate `vector_id`s through indexed SQLite lookup tables, then score only that filtered vector subset.
 - ANN work remains a future optimization, not a completed part of the MVP.
 
 The `int8_mmap` format keeps int8 quantization and exact NumPy ranking
@@ -48,6 +57,8 @@ memory-mapped instead of unpacked from one compressed file at process start.
 - Production `int8_mmap` smoke test: returned `indexed_papers=1000000`, `index_kind=int8_mmap`, `index_bytes=396002048`, and `result_count=3` for `0704.0004`.
 - Production warm recommendation after the switch: 0.856s for `0704.0004` with 3 returned results.
 - Production filtered recommendation after candidate prefiltering: 2.433s for `0704.0004` with categories `cs.CL + cs.LG`, returning 10 results.
+- Production category lookup backfill after deploying `paper_categories`: first `/api/categories` call rebuilt the lookup in 35.63s for the 1M proof database; the next `/api/categories` call returned in 0.502s.
+- Production warm filtered recommendation after indexed category lookup: 0.56s for `0704.0004` with categories `cs.CL + cs.LG`, returning 10 results.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 

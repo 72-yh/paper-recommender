@@ -4,7 +4,7 @@
 
 Build a low-cost paper recommendation web service using arXiv metadata. The service recommends papers similar to a user-provided arXiv URL by using metadata embeddings, not PDF full text. The target operating scale is about 100 daily users, so the design prioritizes zero-cost or very low-cost hosting while preserving recommendation quality through measured vector compression.
 
-The current MVP uses a Fly.io low-cost deployment: one small Machine, one 2GB volume, local SQLite, and a local vector index. Earlier Oracle Cloud Always Free and low-cost VPS options remain fallback targets, but the active deployment path is Fly.io because the user could register billing there and the architecture stayed file-based.
+The current MVP uses a Fly.io low-cost deployment: one small Machine, one local volume, local SQLite, and a local vector index. The 1M proof uses a 2GB volume; the full roughly 3M corpus may need a 4GB volume while staying under the same low-cost budget target. Earlier Oracle Cloud Always Free and low-cost VPS options remain fallback targets, but the active deployment path is Fly.io because the user could register billing there and the architecture stayed file-based.
 
 ## Goals
 
@@ -51,7 +51,7 @@ Current MVP state:
 
 - The deployed proof index contains 1M active papers, not the full and current arXiv corpus.
 - The serving index is scalar-quantized int8 and searched with a NumPy implementation.
-- Unfiltered requests use a full vector scan. Category and date filters first build candidate `vector_id`s from SQLite, then score only that filtered vector subset.
+- Unfiltered requests use a full vector scan. Category and date filters first build candidate `vector_id`s from indexed SQLite lookup tables, then score only that filtered vector subset.
 - FAISS is not implemented in the current MVP. FAISS, USearch, or another ANN index should be evaluated before replacing the current search path.
 - The first recommendation request after a cold start can load the 340MB index; the app uses a process-local load lock so concurrent first requests do not duplicate that memory load.
 
@@ -167,6 +167,19 @@ Stores vector tombstones until the next compacting index rebuild.
 | `vector_id` | Deleted vector id |
 | `deleted_at` | Local deletion timestamp |
 
+### `paper_categories`
+
+Derived lookup table for active indexed papers. It duplicates only the fields needed to make category and date filters cheap at serving time.
+
+| Column | Purpose |
+| --- | --- |
+| `arxiv_id` | Paper id |
+| `category` | One category assigned to the paper |
+| `vector_id` | Indexed vector id |
+| `published_date` | Optional date filter field |
+
+The table is maintained from `papers` on upsert, vector assignment, and deletion. Older databases can backfill it from the compact `papers.categories` field. This keeps the first version on SQLite while avoiding a Python scan and split over millions of category strings for every filtered request.
+
 ### `preview_cache`
 
 Optional cache for recently viewed display metadata.
@@ -253,7 +266,9 @@ User-facing errors:
 
 Target cost: below `$10/month`, preferably near the free allowance.
 
-The active deployment is `paper-recommender-72yh` on Fly.io. It uses one `shared-cpu-1x` Machine with 1GB RAM, one 2GB volume, no managed database, no dedicated IPv4, and no extra Machines or regions. The Docker image contains app code only; the 1M SQLite database and int8 vector index are uploaded to the mounted volume.
+The active deployment is `paper-recommender-72yh` on Fly.io. It uses one `shared-cpu-1x` Machine with 1GB RAM, one local volume, no managed database, no dedicated IPv4, and no extra Machines or regions. The Docker image contains app code only; the SQLite database and int8 vector index are uploaded to the mounted volume.
+
+The 3M target is still designed for the same budget class. It should keep the same single-Machine, local-file shape and may resize storage from 2GB to 4GB if the full index and SQLite lookup tables no longer fit. This is a small volume-size change, not a move to a managed database or managed vector store.
 
 Cost guardrails:
 
