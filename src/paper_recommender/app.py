@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -41,11 +42,14 @@ def create_app(
     index_kind = index_kind or os.environ.get("PAPER_RECOMMENDER_INDEX_KIND", "exact")
     app = FastAPI(title="Paper Recommender")
     cached_index = None
+    index_lock = threading.Lock()
 
     def get_index():
         nonlocal cached_index
         if cached_index is None:
-            cached_index = _load_index(index_path, index_kind)
+            with index_lock:
+                if cached_index is None:
+                    cached_index = _load_index(index_path, index_kind)
         return cached_index
 
     @app.get("/health")

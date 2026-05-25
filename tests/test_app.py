@@ -1,3 +1,7 @@
+from concurrent.futures import ThreadPoolExecutor
+import threading
+import time
+
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
@@ -230,6 +234,47 @@ def test_recommend_endpoint_loads_index_once(monkeypatch, tmp_path) -> None:
         )
         assert response.status_code == 200
 
+    assert load_count == 1
+
+
+def test_recommend_endpoint_serializes_first_index_load(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors.npz"
+    conn = connect_db(db_path)
+    init_db(conn)
+    upsert_paper(conn, _paper("1706.03762", 1, date="2017-06-12"))
+    upsert_paper(conn, _paper("1111.11111", 2, date="2020-01-01"))
+    conn.close()
+    ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.9, 0.1], dtype=np.float32),
+        }
+    ).save(index_path)
+    load_count = 0
+    count_lock = threading.Lock()
+    original_load_index = app_module._load_index
+
+    def slow_counting_load_index(index_path, index_kind):
+        nonlocal load_count
+        time.sleep(0.1)
+        with count_lock:
+            load_count += 1
+        return original_load_index(index_path, index_kind)
+
+    monkeypatch.setattr(app_module, "_load_index", slow_counting_load_index)
+    client = TestClient(create_app(db_path=db_path, index_path=index_path))
+
+    def request_recommendation():
+        return client.post(
+            "/api/recommend",
+            json={"url": "https://arxiv.org/abs/1706.03762", "top_k": 1},
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda _: request_recommendation(), range(2)))
+
+    assert [response.status_code for response in responses] == [200, 200]
     assert load_count == 1
 
 

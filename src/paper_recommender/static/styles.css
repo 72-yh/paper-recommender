@@ -68,6 +68,11 @@ button {
   font-weight: 700;
 }
 
+button:disabled {
+  background: #8aa7d6;
+  cursor: wait;
+}
+
 button:focus,
 input:focus,
 a:focus {

@@ -3,6 +3,7 @@ const indexStatusNode = document.querySelector("#index-status");
 const statusNode = document.querySelector("#status");
 const resultsNode = document.querySelector("#results");
 const template = document.querySelector("#result-template");
+const submitButton = form.querySelector('button[type="submit"]');
 
 function setStatus(message) {
   statusNode.textContent = message;
@@ -87,6 +88,11 @@ function renderResults(results) {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (submitButton.disabled) {
+    return;
+  }
+
+  submitButton.disabled = true;
   setStatus("Searching...");
   resultsNode.replaceChildren();
 
@@ -96,7 +102,7 @@ form.addEventListener("submit", async (event) => {
     category: formData.get("category") || null,
     date_from: formData.get("date_from") || null,
     date_to: formData.get("date_to") || null,
-    top_k: Number(formData.get("top_k") || 10),
+    top_k: 10,
   };
 
   try {
@@ -115,6 +121,8 @@ form.addEventListener("submit", async (event) => {
     renderResults((body && body.results) || []);
   } catch (error) {
     setStatus("Request failed");
+  } finally {
+    submitButton.disabled = false;
   }
 });
 

@@ -16,7 +16,6 @@ def test_static_ui_uses_required_english_labels() -> None:
         "arXiv URL",
         "Category",
         "Date range",
-        "Top K",
         "Find similar papers",
         "Similar papers",
         "Open on arXiv",
@@ -25,11 +24,24 @@ def test_static_ui_uses_required_english_labels() -> None:
     ]:
         assert label in html
 
+    assert "Top K" not in html
+    assert 'name="top_k"' not in html
+
 
 def test_static_ui_posts_to_recommend_endpoint() -> None:
     javascript = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 
     assert 'fetch("/api/recommend"' in javascript
+    assert "top_k: 10" in javascript
+    assert 'formData.get("top_k")' not in javascript
+
+
+def test_static_ui_prevents_duplicate_recommendation_submits() -> None:
+    javascript = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "const submitButton = form.querySelector" in javascript
+    assert "submitButton.disabled = true" in javascript
+    assert "submitButton.disabled = false" in javascript
 
 
 def test_static_ui_fetches_index_status() -> None:
