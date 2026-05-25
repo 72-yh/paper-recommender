@@ -16,6 +16,8 @@ volume, and no managed services.
 - Do not create Managed Postgres, Redis, Tigris, or other managed services.
 - Do not create extra regions, extra Machines, GPUs, Kubernetes, or support
   plans.
+- Do not use a remote builder for this small deployment; use local Docker with
+  `--local-only` to avoid builder resources.
 - Check Fly Dashboard > Billing before and after every deploy session.
 
 As of 2026-05-25, Fly's public pricing makes this a low-dollar deployment, but
@@ -54,7 +56,7 @@ availability.
 ```powershell
 fly apps create paper-recommender-72yh
 fly volumes create paper_recommender_data --app paper-recommender-72yh --region sjc --size 2
-fly deploy --app paper-recommender-72yh --ha=false
+fly deploy --app paper-recommender-72yh --ha=false --local-only
 ```
 
 After deploy, confirm there is one Machine and one volume:
@@ -83,6 +85,12 @@ fly sftp shell --app paper-recommender-72yh
 
 Then run the same two `put` operations inside the SFTP shell.
 
+Machine may auto-stop during long SFTP uploads. If an upload disconnects near
+the end, verify the file size on the volume before retrying. During the 1M proof
+deployment, the database upload completed, the vector upload needed a retry, and
+a lightweight `/health` keepalive helped keep the Machine available during the
+second upload.
+
 ## Verification
 
 Use the deployment smoke test against the Fly URL:
@@ -100,6 +108,11 @@ Then check billing again:
 ```powershell
 fly dashboard --app paper-recommender-72yh
 ```
+
+The first recommendation requests can load the index from the mounted volume.
+For the 1M int8 proof, this is a 340MB file, so a cold request can take much
+longer than a warm request. The app protects the first load with an index-load
+lock, and the UI disables duplicate submits while a search is running.
 
 ## Cleanup
 

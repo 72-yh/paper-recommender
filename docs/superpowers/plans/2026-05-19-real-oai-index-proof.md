@@ -16,9 +16,9 @@
 - Create: `src/paper_recommender/oai_client.py`
 - Test: `tests/test_oai_client.py`
 
-- [ ] Write tests for ListRecords URL construction and resumption-token pagination.
-- [ ] Implement the minimal client using `urllib.request`.
-- [ ] Verify with `pytest tests/test_oai_client.py -v`.
+- [x] Write tests for ListRecords URL construction and resumption-token pagination.
+- [x] Implement the minimal client using `urllib.request`.
+- [x] Verify with `pytest tests/test_oai_client.py -v`.
 
 ### Task 2: Local Text Embedder
 
@@ -26,9 +26,9 @@
 - Create: `src/paper_recommender/embedding.py`
 - Test: `tests/test_embedding.py`
 
-- [ ] Write tests for deterministic hashing vectors and sentence-transformers model loading.
-- [ ] Implement `BAAI/bge-small-en-v1.5` as the default real embedder and keep hashing as a fallback.
-- [ ] Verify with `pytest tests/test_embedding.py -v`.
+- [x] Write tests for deterministic hashing vectors and sentence-transformers model loading.
+- [x] Implement `BAAI/bge-small-en-v1.5` as the default real embedder and keep hashing as a fallback.
+- [x] Verify with `pytest tests/test_embedding.py -v`.
 
 ### Task 3: Build Index Script
 
@@ -38,18 +38,18 @@
 - Create: `scripts/build_oai_index.py`
 - Test: `tests/test_index_builder.py`
 
-- [ ] Write tests that build an index from fake OAI XML and query recommendations.
-- [ ] Add storage helpers for vector id assignment and active vector rows.
-- [ ] Implement the builder and CLI.
-- [ ] Add a `--reset` CLI option for replacing sample data with a clean real-data proof index.
-- [ ] Verify with `pytest tests/test_index_builder.py -v`.
+- [x] Write tests that build an index from fake OAI XML and query recommendations.
+- [x] Add storage helpers for vector id assignment and active vector rows.
+- [x] Implement the builder and CLI.
+- [x] Add a `--reset` CLI option for replacing sample data with a clean real-data proof index.
+- [x] Verify with `pytest tests/test_index_builder.py -v`.
 
 ### Task 4: Final Verification
 
-- [ ] Run `pytest -v`.
-- [ ] Run `ruff check .`.
-- [ ] Run the build script against a small real OAI `datestamp` window.
-- [ ] Call `/api/recommend` against the generated index.
+- [x] Run `pytest -v`.
+- [x] Run `ruff check .`.
+- [x] Run the build script against a small real OAI `datestamp` window.
+- [x] Call `/api/recommend` against the generated index.
 
 ### Task 5: Compression Evaluation
 
@@ -59,6 +59,45 @@
 - Test: `tests/test_compressed_vector_store.py`
 - Test: `tests/test_evaluate_compression_script.py`
 
-- [ ] Add a PCA + int8 scalar-quantized index for evaluation artifacts.
-- [ ] Add `recall@k` comparison against the float32 exact baseline.
-- [ ] Keep the API on the exact index until compressed recall is measured on a larger sample.
+- [x] Add an int8 scalar-quantized index for evaluation artifacts.
+- [x] Add `recall@k` comparison against the float32 exact baseline.
+- [x] Keep the API on the exact index until compressed recall is measured on a larger sample.
+- [x] Promote the 1M proof to the int8 serving path after local evaluation showed acceptable quality for the proof stage.
+
+### Task 6: Container And Fly Deployment
+
+**Files:**
+- Create: `fly.toml`
+- Create: `docs/deployment/fly-low-cost.md`
+- Modify: `pyproject.toml`
+- Test: `tests/test_deployment_config.py`
+
+- [x] Add a Docker/Fly configuration that uses one small Machine and one mounted volume.
+- [x] Keep the Docker image code-only and upload SQLite/vector artifacts to the Fly volume.
+- [x] Use `fly deploy --app paper-recommender-72yh --ha=false --local-only` so no remote builder resource is created.
+- [x] Package static UI assets so `/` works after deployment.
+- [x] Deploy the 1M proof artifacts to `https://paper-recommender-72yh.fly.dev/`.
+- [x] Verify `/api/status` reports 1,000,000 active and indexed papers with `index_kind=int8`.
+
+### Task 7: Current Serving Performance Baseline
+
+**Files:**
+- Create: `docs/operations/current-state.md`
+- Test: `tests/test_documentation.py`
+
+- [x] Record the current deployed serving path as 1M int8 NumPy full-scan.
+- [x] Record that FAISS is not currently deployed.
+- [x] Record the cold-start recommendation behavior after Machine auto-start.
+- [x] Record the warm recommendation behavior after the index has loaded.
+- [x] Keep the Fly Machine stopped after verification to avoid unnecessary compute time.
+
+### Task 8: ANN Serving Index Evaluation
+
+**Status:** Not started.
+
+**Goal:** Replace the NumPy full-scan path only after measuring recall and latency against the current exact/int8 baseline.
+
+- [ ] Build a benchmark harness over the existing 1M proof artifacts.
+- [ ] Compare FAISS, USearch, or another local ANN index against the current NumPy full-scan path.
+- [ ] Measure recall@10, recall@50, cold-load cost, warm latency, artifact size, and memory usage.
+- [ ] Promote an ANN path only if it improves latency without an unacceptable quality drop.

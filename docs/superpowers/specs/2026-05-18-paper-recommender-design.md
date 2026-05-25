@@ -4,7 +4,7 @@
 
 Build a low-cost paper recommendation web service using arXiv metadata. The service recommends papers similar to a user-provided arXiv URL by using metadata embeddings, not PDF full text. The target operating scale is about 100 daily users, so the design prioritizes zero-cost or very low-cost hosting while preserving recommendation quality through measured vector compression.
 
-The recommended deployment is a free VM first, preferably Oracle Cloud Always Free. If that is not available or stable enough, the same file-based architecture should move to a low-cost VPS such as a small Hetzner instance.
+The current MVP uses a Fly.io low-cost deployment: one small Machine, one 2GB volume, local SQLite, and a local vector index. Earlier Oracle Cloud Always Free and low-cost VPS options remain fallback targets, but the active deployment path is Fly.io because the user could register billing there and the architecture stayed file-based.
 
 ## Goals
 
@@ -15,8 +15,8 @@ The recommended deployment is a free VM first, preferably Oracle Cloud Always Fr
 - Update daily using OAI-PMH `oai_datestamp`, not paper authored or published date.
 - Re-embed modified papers only when `title`, `abstract`, or `categories` changes.
 - Exclude deleted OAI-PMH records from recommendation results.
-- Let users input an arXiv URL and receive top-k similar papers.
-- Support optional category, date, and top-k filters.
+- Let users input an arXiv URL and receive 10 similar papers.
+- Support optional category and date filters.
 - Use English UI labels and user-facing error messages.
 - Prioritize monthly cost of `$0`, with a fallback target below `$10/month`.
 
@@ -46,6 +46,13 @@ The system has four main parts:
 2. Embedding and compression pipeline
 3. SQLite metadata store plus local vector index files
 4. Small web/API service
+
+Current MVP state:
+
+- The deployed proof index contains 1M active papers, not the full and current arXiv corpus.
+- The serving index is scalar-quantized int8 and searched with a NumPy full-scan implementation.
+- FAISS is not implemented in the current MVP. FAISS, USearch, or another ANN index should be evaluated before replacing the current search path.
+- The first recommendation request after a cold start can load the 340MB index; the app uses a process-local load lock so concurrent first requests do not duplicate that memory load.
 
 ### OAI-PMH Ingestion
 
@@ -85,7 +92,7 @@ The pipeline computes a `content_hash` from the normalized embedding input. Modi
 
 The base embedding model is local and open source. The design should evaluate 384-dimensional and 768-dimensional model options before final selection.
 
-The production vector index stores compressed vectors only:
+The target production vector index stores compressed vectors only:
 
 1. Generate local embedding.
 2. Apply PCA or OPQ dimensionality reduction.
@@ -93,6 +100,8 @@ The production vector index stores compressed vectors only:
 4. Add or replace the paper vector in the staging index.
 
 Auto-encoder compression is not part of the default design. It can be evaluated later only if it beats PCA/OPQ on recall while keeping operational complexity acceptable.
+
+The current 1M proof skips PCA/OPQ and stores full-dimension int8 vectors. PCA/OPQ can still be reconsidered after a larger quality evaluation, but it is not required before the next serving milestone.
 
 ### Compression Quality Gate
 
@@ -181,11 +190,11 @@ The full title and abstract for every paper should not be stored for display in 
 3. Look up the paper in SQLite.
 4. Reject missing, inactive, or vectorless records with a clear English error.
 5. Retrieve the query vector from the local index.
-6. Run ANN search with overfetch.
+6. Run vector search with overfetch. The current MVP uses NumPy full-scan; an ANN index is future work.
 7. Exclude the query paper itself.
 8. Exclude inactive or deleted papers.
 9. Apply optional category and date filters.
-10. Return up to `top_k` results.
+10. Return up to 10 results for the web UI. The API may keep an internal `top_k` parameter for tests and direct calls.
 
 ### Supported URL Formats
 
@@ -214,12 +223,13 @@ The UI may render arXiv page previews or external links. Local storage does not 
 
 The UI language is English.
 
+The UI does not expose a Top K control and always requests 10 recommendations. This keeps the first user experience simple and avoids very large result requests on the low-cost deployment.
+
 Main labels:
 
 - `arXiv URL`
 - `Category`
 - `Date range`
-- `Top K`
 - `Find similar papers`
 - `Similar papers`
 - `Open on arXiv`
@@ -235,29 +245,29 @@ User-facing errors:
 
 ## Deployment
 
-### Preferred: Oracle Cloud Always Free
+### Current: Fly.io Low-Cost Deployment
 
-Target cost: `$0/month`.
+Target cost: below `$10/month`, preferably near the free allowance.
 
-Use one Always Free VM if available. The free ARM allocation is suitable for a low-traffic service and a compressed local index. Keep SQLite, production index files, logs, and recent backups within the free block volume allowance.
+The active deployment is `paper-recommender-72yh` on Fly.io. It uses one `shared-cpu-1x` Machine with 1GB RAM, one 2GB volume, no managed database, no dedicated IPv4, and no extra Machines or regions. The Docker image contains app code only; the 1M SQLite database and int8 vector index are uploaded to the mounted volume.
 
-Risks:
+Cost guardrails:
 
-- Always Free capacity may be unavailable.
-- Idle resources may be reclaimed.
-- Operational reliability is lower than a paid VPS.
+- Keep `min_machines_running = 0` and allow auto-stop.
+- Stop the Machine after verification when no active testing is needed.
+- Do not create managed Postgres, Redis, Tigris, GPUs, extra Machines, or extra regions without explicit approval.
+- Check Fly billing before and after deploy sessions.
 
-Mitigation:
+Operational observations from the 1M proof:
 
-- Keep the deployment file-based and portable.
-- Back up SQLite, index artifacts, and model artifacts.
-- Use lightweight health checks.
+- The deployed status endpoint reports 1,000,000 active and indexed papers with last OAI datestamp `2016-01-27`.
+- A concurrent cold-start recommendation pair completed successfully in about 22.6 seconds.
+- A concurrent warm recommendation pair completed successfully in about 1.3 seconds.
+- These measurements are for the 1M int8 NumPy full-scan path, not FAISS.
 
-### Fallback: Low-Cost VPS
+### Fallback: Free VM Or Low-Cost VPS
 
-Target cost: below `$10/month`.
-
-A small Hetzner instance is the preferred fallback. The service should not depend on managed database or managed vector infrastructure, so migration should mostly involve copying files and restarting the service.
+Oracle Cloud Always Free or a small low-cost VPS remain fallback options if Fly.io becomes unsuitable. The service should not depend on managed database or managed vector infrastructure, so migration should mostly involve copying files and restarting the service.
 
 ## Backup And Rollback
 
@@ -331,18 +341,16 @@ Promotion rule:
 
 ## Open Implementation Choices
 
-These should be decided during implementation planning:
+These should be decided during future implementation planning:
 
-- Exact local embedding model.
-- Exact vector library: FAISS or USearch.
-- Exact compression configuration: PCA dimension, OPQ usage, int8 versus IVF-PQ.
+- Exact ANN vector library: FAISS, USearch, or HNSW-based local index.
+- Exact compression configuration beyond the current full-dimension int8 scalar quantization.
 - Exact recall thresholds for promotion.
-- Exact deployment target after checking Oracle Always Free availability.
+- Whether a full-current corpus can fit within the current Fly volume and memory budget.
 
 ## Success Criteria
 
-- The service runs at `$0/month` if Oracle Always Free is available.
-- Fallback monthly cost remains below `$10/month`.
+- Monthly hosting remains below `$10/month`.
 - The system supports about 100 daily users.
 - OAI-PMH incremental updates use `oai_datestamp`.
 - Each paper has at most one latest active vector.
@@ -351,3 +359,4 @@ These should be decided during implementation planning:
 - Recommendation API excludes the input paper itself.
 - Missing or unavailable IDs return clear English errors.
 - Compressed index quality is measured before production promotion.
+- The active documentation says when the current deployment is exact/NumPy full-scan and when FAISS or another ANN library has actually been introduced.
