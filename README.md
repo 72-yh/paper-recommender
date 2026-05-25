@@ -98,6 +98,10 @@ Run the full local container verification flow:
 This runs artifact preflight, `docker compose config`, `docker compose build`,
 `docker compose up -d`, `/health` polling, and the deployment smoke test.
 
+For the low-cost Fly.io deployment path, follow
+`docs/deployment/fly-low-cost.md` before running any Fly commands that create
+apps, volumes, Machines, IPs, or managed services.
+
 Validate the mounted artifacts before starting or shipping the container:
 
 ```powershell

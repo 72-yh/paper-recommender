@@ -1,4 +1,5 @@
 from pathlib import Path
+import tomllib
 
 
 def test_dockerfile_packages_api_without_local_data() -> None:
@@ -73,3 +74,47 @@ def test_readme_documents_container_deployment() -> None:
     assert "data/paper_recommender_1m.db" in readme
     assert "data/vectors_1m_int8.npz" in readme
     assert "Compose project name is fixed to `paper_recommender`" in readme
+
+
+def test_fly_config_uses_low_cost_single_machine() -> None:
+    config = tomllib.loads(Path("fly.toml").read_text(encoding="utf-8"))
+
+    assert config["app"].startswith("paper-recommender")
+    assert "arxiv" not in config["app"]
+
+    service = config["http_service"]
+    assert service["internal_port"] == 8000
+    assert service["auto_stop_machines"] == "stop"
+    assert service["auto_start_machines"] is True
+    assert service["min_machines_running"] == 0
+
+    vm = config["vm"][0]
+    assert vm["cpu_kind"] == "shared"
+    assert vm["cpus"] == 1
+    assert vm["memory_mb"] == 1024
+
+    mount = config["mounts"][0]
+    assert mount["source"] == "paper_recommender_data"
+    assert mount["destination"] == "/app/data"
+    assert mount["initial_size"] == "2GB"
+    assert mount["scheduled_snapshots"] is False
+
+
+def test_fly_config_avoids_known_cost_multipliers() -> None:
+    fly_config = Path("fly.toml").read_text(encoding="utf-8").lower()
+
+    assert "autoscaler" not in fly_config
+    assert "dedicated" not in fly_config
+    assert "allocate-v4" not in fly_config
+
+
+def test_fly_runbook_documents_cost_guardrails() -> None:
+    runbook = Path("docs/deployment/fly-low-cost.md").read_text(encoding="utf-8")
+
+    assert "Cost Guardrails" in runbook
+    assert "shared-cpu-1x" in runbook
+    assert "1GB RAM" in runbook
+    assert "Do not run `fly ips allocate-v4`" in runbook
+    assert "Do not enable metrics-based autoscaling" in runbook
+    assert "Do not create Managed Postgres, Redis, Tigris, or other managed services" in runbook
+    assert "Check Fly Dashboard > Billing" in runbook
