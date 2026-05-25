@@ -34,6 +34,7 @@ def recommend(
     arxiv_id: str,
     top_k: int,
     category: str | None = None,
+    categories: list[str] | tuple[str, ...] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> list[Recommendation]:
@@ -52,6 +53,7 @@ def recommend(
     if query_vector is None:
         raise RecommendationError(404, VECTOR_MISSING_MESSAGE)
 
+    category_filter = _category_filter(category, categories)
     recommendations: list[Recommendation] = []
     for vector_result in index.search(query_vector, top_k=max(top_k * 20, 100)):
         candidate = get_paper_by_vector_id(conn, vector_result.vector_id)
@@ -61,7 +63,9 @@ def recommend(
             continue
         if not candidate.active:
             continue
-        if category is not None and category not in candidate.categories:
+        if category_filter and not any(
+            selected_category in candidate.categories for selected_category in category_filter
+        ):
             continue
         if (date_from is not None or date_to is not None) and candidate.published_date is None:
             continue
@@ -87,3 +91,15 @@ def recommend(
             break
 
     return recommendations
+
+
+def _category_filter(
+    category: str | None,
+    categories: list[str] | tuple[str, ...] | None,
+) -> tuple[str, ...]:
+    selected: list[str] = []
+    if category is not None:
+        selected.append(category)
+    if categories is not None:
+        selected.extend(categories)
+    return tuple(dict.fromkeys(value.strip() for value in selected if value and value.strip()))

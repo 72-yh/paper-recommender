@@ -103,6 +103,29 @@ def test_recommend_category_filter_matches_secondary_category() -> None:
     assert [result.arxiv_id for result in results] == ["1111.11111"]
 
 
+def test_recommend_applies_multiple_category_filters_with_or_semantics() -> None:
+    conn = _init_conn_with_papers(
+        [
+            _paper("1706.03762", 1, "cs.CL"),
+            _paper("1111.11111", 2, "cs.AI"),
+            _paper("2222.22222", 3, "cs.LG"),
+            _paper("3333.33333", 4, "math.OC"),
+        ]
+    )
+    index = ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.99, 0.01], dtype=np.float32),
+            3: np.array([0.98, 0.02], dtype=np.float32),
+            4: np.array([0.97, 0.03], dtype=np.float32),
+        }
+    )
+
+    results = recommend(conn, index, "1706.03762", top_k=5, categories=["cs.AI", "math.OC"])
+
+    assert [result.arxiv_id for result in results] == ["1111.11111", "3333.33333"]
+
+
 def test_recommend_rejects_missing_paper() -> None:
     conn = _init_conn_with_papers([])
     index = ExactVectorIndex.from_items({1: np.array([1.0, 0.0], dtype=np.float32)})

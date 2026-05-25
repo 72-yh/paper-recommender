@@ -60,6 +60,11 @@ input {
   padding: 8px 10px;
 }
 
+input[type="checkbox"] {
+  width: 18px;
+  min-height: 18px;
+}
+
 button {
   border: 0;
   background: #1f6feb;
@@ -91,6 +96,55 @@ a:focus {
 .meta,
 .score {
   color: #5b677a;
+}
+
+.category-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.selected-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 0;
+}
+
+.category-chip {
+  width: auto;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid #b7c0cf;
+  background: #eef4ff;
+  color: #1f2937;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.category-options {
+  display: grid;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid #b7c0cf;
+  border-radius: 6px;
+  padding: 6px;
+  background: #ffffff;
+}
+
+.category-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-weight: 400;
+}
+
+.category-option:hover {
+  background: #f1f5fb;
 }
 
 .index-status {

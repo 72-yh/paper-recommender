@@ -12,6 +12,8 @@ def test_design_doc_reflects_current_mvp_decisions() -> None:
 
     assert "The UI does not expose a Top K control" in design
     assert "always requests 10 recommendations" in design
+    assert "multi-select category filter" in design
+    assert "OR semantics" in design
     assert "Fly.io low-cost deployment" in design
     assert "FAISS is not implemented in the current MVP" in design
     assert "NumPy full-scan" in design

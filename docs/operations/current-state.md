@@ -53,6 +53,7 @@ The cold-start number includes Machine auto-start and first index load. Warm rec
 
 - The deployed proof covers 1M papers up to OAI datestamp `2016-01-27`, not all roughly 3M current arXiv records.
 - The web UI always requests 10 recommendations and does not expose a Top K control.
+- The web UI exposes a searchable multi-select category filter. Production `/api/categories` returned 168 categories in 2.032s on first call after the deployment, and multi-category recommendation filtering returned HTTP 200.
 - First request after an idle stop can be slow.
 - FAISS, USearch, or another ANN index still needs recall and latency evaluation before replacement.
 

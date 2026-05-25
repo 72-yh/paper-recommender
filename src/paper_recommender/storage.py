@@ -134,6 +134,21 @@ def list_active_papers_with_vectors(conn: sqlite3.Connection) -> list[Paper]:
     return [paper for row in rows if (paper := _row_to_paper(row)) is not None]
 
 
+def list_active_category_counts(conn: sqlite3.Connection) -> list[tuple[str, int]]:
+    rows = conn.execute(
+        """
+        SELECT categories
+        FROM papers
+        WHERE active = 1 AND vector_id IS NOT NULL
+        """
+    )
+    counts: dict[str, int] = {}
+    for row in rows:
+        for category in _decode_categories(row["categories"]):
+            counts[category] = counts.get(category, 0) + 1
+    return sorted(counts.items())
+
+
 def max_vector_id(conn: sqlite3.Connection) -> int:
     row: Any = conn.execute("SELECT COALESCE(MAX(vector_id), 0) AS value FROM papers").fetchone()
     return int(row["value"])

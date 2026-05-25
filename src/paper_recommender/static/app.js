@@ -4,6 +4,11 @@ const statusNode = document.querySelector("#status");
 const resultsNode = document.querySelector("#results");
 const template = document.querySelector("#result-template");
 const submitButton = form.querySelector('button[type="submit"]');
+const categorySearch = document.querySelector("#category-search");
+const categoryOptions = document.querySelector("#category-options");
+const selectedCategoriesNode = document.querySelector("#selected-categories");
+const selectedCategories = new Set();
+let availableCategories = [];
 
 function setStatus(message) {
   statusNode.textContent = message;
@@ -49,6 +54,75 @@ function formatIndexStatus(status) {
   const kind = status.index_kind || "unknown";
   const datestamp = status.last_oai_datestamp || "unknown";
   return `${papers} papers | ${kind} | OAI through ${datestamp}`;
+}
+
+function formatCategory(category) {
+  return `${category.category} (${formatCount(category.count)})`;
+}
+
+function visibleCategories() {
+  const query = categorySearch.value.trim().toLowerCase();
+  if (!query) {
+    return availableCategories;
+  }
+  return availableCategories.filter((category) => category.category.toLowerCase().includes(query));
+}
+
+function renderSelectedCategories() {
+  selectedCategoriesNode.replaceChildren();
+  for (const category of selectedCategories) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "category-chip";
+    chip.textContent = `${category} x`;
+    chip.addEventListener("click", () => {
+      selectedCategories.delete(category);
+      renderSelectedCategories();
+      renderCategoryOptions();
+    });
+    selectedCategoriesNode.appendChild(chip);
+  }
+}
+
+function renderCategoryOptions() {
+  categoryOptions.replaceChildren();
+  for (const category of visibleCategories()) {
+    const option = document.createElement("label");
+    option.className = "category-option";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = category.category;
+    checkbox.checked = selectedCategories.has(category.category);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        selectedCategories.add(category.category);
+      } else {
+        selectedCategories.delete(category.category);
+      }
+      renderSelectedCategories();
+    });
+
+    const label = document.createElement("span");
+    label.textContent = formatCategory(category);
+
+    option.append(checkbox, label);
+    categoryOptions.appendChild(option);
+  }
+}
+
+async function loadCategories() {
+  try {
+    const response = await fetch("/api/categories");
+    const body = await parseJsonOrNull(response);
+    if (!response.ok || !Array.isArray(body)) {
+      return;
+    }
+    availableCategories = body;
+    renderCategoryOptions();
+  } catch {
+    availableCategories = [];
+  }
 }
 
 async function loadIndexStatus() {
@@ -99,7 +173,7 @@ form.addEventListener("submit", async (event) => {
   const formData = new FormData(form);
   const payload = {
     url: formData.get("url"),
-    category: formData.get("category") || null,
+    categories: Array.from(selectedCategories),
     date_from: formData.get("date_from") || null,
     date_to: formData.get("date_to") || null,
     top_k: 10,
@@ -126,4 +200,7 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
+categorySearch.addEventListener("input", renderCategoryOptions);
+
 loadIndexStatus();
+loadCategories();

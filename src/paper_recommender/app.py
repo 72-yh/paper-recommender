@@ -12,13 +12,14 @@ from pydantic import BaseModel, Field
 from paper_recommender.arxiv_id import InvalidArxivUrl, parse_arxiv_id
 from paper_recommender.compressed_vector_store import Int8VectorIndex, MmapInt8VectorIndex
 from paper_recommender.recommender import RecommendationError, recommend
-from paper_recommender.storage import connect_db, get_pipeline_state
+from paper_recommender.storage import connect_db, get_pipeline_state, list_active_category_counts
 from paper_recommender.vector_store import ExactVectorIndex
 
 
 class RecommendRequest(BaseModel):
     url: str
     category: str | None = None
+    categories: list[str] = Field(default_factory=list, max_length=64)
     date_from: str | None = None
     date_to: str | None = None
     top_k: int = Field(default=10, ge=1, le=100)
@@ -32,6 +33,11 @@ class IndexStatus(BaseModel):
     index_bytes: int
 
 
+class CategoryOption(BaseModel):
+    category: str
+    count: int
+
+
 def create_app(
     db_path: str | Path | None = None,
     index_path: str | Path | None = None,
@@ -42,7 +48,9 @@ def create_app(
     index_kind = index_kind or os.environ.get("PAPER_RECOMMENDER_INDEX_KIND", "exact")
     app = FastAPI(title="Paper Recommender")
     cached_index = None
+    cached_categories: list[CategoryOption] | None = None
     index_lock = threading.Lock()
+    categories_lock = threading.Lock()
 
     def get_index():
         nonlocal cached_index
@@ -76,6 +84,22 @@ def create_app(
             index_bytes=_file_size(index_path),
         )
 
+    @app.get("/api/categories")
+    def category_options() -> list[CategoryOption]:
+        nonlocal cached_categories
+        if cached_categories is None:
+            with categories_lock:
+                if cached_categories is None:
+                    conn = connect_db(db_path)
+                    try:
+                        cached_categories = [
+                            CategoryOption(category=category, count=count)
+                            for category, count in list_active_category_counts(conn)
+                        ]
+                    finally:
+                        conn.close()
+        return cached_categories
+
     @app.post("/api/recommend")
     def recommend_papers(request: RecommendRequest) -> dict[str, object]:
         try:
@@ -89,6 +113,7 @@ def create_app(
                     arxiv_id,
                     top_k=request.top_k,
                     category=request.category,
+                    categories=request.categories,
                     date_from=request.date_from,
                     date_to=request.date_to,
                 )

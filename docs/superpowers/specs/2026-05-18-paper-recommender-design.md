@@ -16,7 +16,7 @@ The current MVP uses a Fly.io low-cost deployment: one small Machine, one 2GB vo
 - Re-embed modified papers only when `title`, `abstract`, or `categories` changes.
 - Exclude deleted OAI-PMH records from recommendation results.
 - Let users input an arXiv URL and receive 10 similar papers.
-- Support optional category and date filters.
+- Support optional multi-select category and date filters.
 - Use English UI labels and user-facing error messages.
 - Prioritize monthly cost of `$0`, with a fallback target below `$10/month`.
 
@@ -193,7 +193,7 @@ The full title and abstract for every paper should not be stored for display in 
 6. Run vector search with overfetch. The current MVP uses NumPy full-scan; an ANN index is future work.
 7. Exclude the query paper itself.
 8. Exclude inactive or deleted papers.
-9. Apply optional category and date filters.
+9. Apply optional category and date filters. Multiple selected categories use OR semantics.
 10. Return up to 10 results for the web UI. The API may keep an internal `top_k` parameter for tests and direct calls.
 
 ### Supported URL Formats
@@ -224,6 +224,8 @@ The UI may render arXiv page previews or external links. Local storage does not 
 The UI language is English.
 
 The UI does not expose a Top K control and always requests 10 recommendations. This keeps the first user experience simple and avoids very large result requests on the low-cost deployment.
+
+The UI uses a searchable multi-select category filter backed by `/api/categories`. Selected categories are sent as an array and interpreted with OR semantics, so `cs.CL + cs.LG` returns papers that match either category.
 
 Main labels:
 

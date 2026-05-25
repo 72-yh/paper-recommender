@@ -26,6 +26,10 @@ def test_static_ui_uses_required_english_labels() -> None:
 
     assert "Top K" not in html
     assert 'name="top_k"' not in html
+    assert 'name="category"' not in html
+    assert 'id="category-search"' in html
+    assert 'id="category-options"' in html
+    assert 'id="selected-categories"' in html
 
 
 def test_static_ui_posts_to_recommend_endpoint() -> None:
@@ -33,7 +37,9 @@ def test_static_ui_posts_to_recommend_endpoint() -> None:
 
     assert 'fetch("/api/recommend"' in javascript
     assert "top_k: 10" in javascript
+    assert "categories: Array.from(selectedCategories)" in javascript
     assert 'formData.get("top_k")' not in javascript
+    assert 'formData.get("category")' not in javascript
 
 
 def test_static_ui_prevents_duplicate_recommendation_submits() -> None:
@@ -50,6 +56,15 @@ def test_static_ui_fetches_index_status() -> None:
     assert 'fetch("/api/status")' in javascript
     assert "formatIndexStatus" in javascript
     assert "OAI through" in javascript
+
+
+def test_static_ui_fetches_and_renders_category_options() -> None:
+    javascript = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'fetch("/api/categories")' in javascript
+    assert "loadCategories" in javascript
+    assert "renderCategoryOptions" in javascript
+    assert "selectedCategories" in javascript
 
 
 def test_static_ui_normalizes_non_success_error_details() -> None:

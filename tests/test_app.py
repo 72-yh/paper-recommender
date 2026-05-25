@@ -177,6 +177,72 @@ def test_status_endpoint_reports_mmap_index_directory_size(tmp_path) -> None:
     assert response.json()["index_bytes"] == expected_index_bytes
 
 
+def test_categories_endpoint_returns_active_indexed_categories(tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors.npz"
+    conn = connect_db(db_path)
+    init_db(conn)
+    upsert_paper(conn, _paper("1706.03762", 1, category="cs.CL"))
+    upsert_paper(conn, _paper("1111.11111", 2, category="cs.AI", categories=("cs.AI", "cs.LG")))
+    upsert_paper(conn, _paper("2222.22222", None, category="math.OC"))
+    conn.close()
+    ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.9, 0.1], dtype=np.float32),
+        }
+    ).save(index_path)
+    client = TestClient(create_app(db_path=db_path, index_path=index_path))
+
+    response = client.get("/api/categories")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"category": "cs.AI", "count": 1},
+        {"category": "cs.CL", "count": 1},
+        {"category": "cs.LG", "count": 1},
+    ]
+
+
+def test_recommend_endpoint_accepts_multiple_categories(tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors.npz"
+    conn = connect_db(db_path)
+    init_db(conn)
+    for paper in [
+        _paper("1706.03762", 1, category="cs.CL"),
+        _paper("1111.11111", 2, category="cs.AI"),
+        _paper("2222.22222", 3, category="cs.LG"),
+        _paper("3333.33333", 4, category="math.OC"),
+    ]:
+        upsert_paper(conn, paper)
+    conn.close()
+    ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.99, 0.01], dtype=np.float32),
+            3: np.array([0.98, 0.02], dtype=np.float32),
+            4: np.array([0.97, 0.03], dtype=np.float32),
+        }
+    ).save(index_path)
+    client = TestClient(create_app(db_path=db_path, index_path=index_path))
+
+    response = client.post(
+        "/api/recommend",
+        json={
+            "url": "https://arxiv.org/abs/1706.03762",
+            "categories": ["cs.AI", "math.OC"],
+            "top_k": 10,
+        },
+    )
+
+    assert response.status_code == 200
+    assert [result["arxiv_id"] for result in response.json()["results"]] == [
+        "1111.11111",
+        "3333.33333",
+    ]
+
+
 def test_module_exports_app() -> None:
     assert app_module.app is not None
 

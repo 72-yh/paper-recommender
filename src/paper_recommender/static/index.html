@@ -23,8 +23,26 @@
 
           <div class="filters">
             <div>
-              <label for="category">Category</label>
-              <input id="category" name="category" type="text" placeholder="cs.CL" />
+              <label for="category-search">Category</label>
+              <div class="category-picker">
+                <input
+                  id="category-search"
+                  type="search"
+                  placeholder="Search categories"
+                  autocomplete="off"
+                />
+                <div
+                  id="selected-categories"
+                  class="selected-categories"
+                  aria-live="polite"
+                ></div>
+                <div
+                  id="category-options"
+                  class="category-options"
+                  role="group"
+                  aria-label="Categories"
+                ></div>
+              </div>
             </div>
             <div>
               <label>Date range</label>
