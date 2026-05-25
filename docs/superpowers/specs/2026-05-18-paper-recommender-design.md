@@ -50,7 +50,8 @@ The system has four main parts:
 Current MVP state:
 
 - The deployed proof index contains 1M active papers, not the full and current arXiv corpus.
-- The serving index is scalar-quantized int8 and searched with a NumPy full-scan implementation.
+- The serving index is scalar-quantized int8 and searched with a NumPy implementation.
+- Unfiltered requests use a full vector scan. Category and date filters first build candidate `vector_id`s from SQLite, then score only that filtered vector subset.
 - FAISS is not implemented in the current MVP. FAISS, USearch, or another ANN index should be evaluated before replacing the current search path.
 - The first recommendation request after a cold start can load the 340MB index; the app uses a process-local load lock so concurrent first requests do not duplicate that memory load.
 
@@ -190,11 +191,12 @@ The full title and abstract for every paper should not be stored for display in 
 3. Look up the paper in SQLite.
 4. Reject missing, inactive, or vectorless records with a clear English error.
 5. Retrieve the query vector from the local index.
-6. Run vector search with overfetch. The current MVP uses NumPy full-scan; an ANN index is future work.
-7. Exclude the query paper itself.
-8. Exclude inactive or deleted papers.
-9. Apply optional category and date filters. Multiple selected categories use OR semantics.
-10. Return up to 10 results for the web UI. The API may keep an internal `top_k` parameter for tests and direct calls.
+6. When category or date filters are present, prefilter candidate `vector_id`s in SQLite.
+7. Run vector search. The current MVP uses NumPy full-scan for unfiltered requests and NumPy subset scoring for filtered requests; an ANN index is future work.
+8. Exclude the query paper itself.
+9. Exclude inactive or deleted papers.
+10. Apply optional category and date filters. Multiple selected categories use OR semantics.
+11. Return up to 10 results for the web UI. The API may keep an internal `top_k` parameter for tests and direct calls.
 
 ### Supported URL Formats
 

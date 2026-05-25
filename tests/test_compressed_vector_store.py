@@ -91,6 +91,15 @@ def test_int8_index_search_does_not_decode_all_rows_per_query(monkeypatch) -> No
     assert [result.vector_id for result in index.search(exact.get(1), 2)] == [1, 2]
 
 
+def test_int8_index_search_subset_scores_only_selected_vector_ids() -> None:
+    exact = _baseline_index()
+    index = Int8VectorIndex.from_exact_index(exact)
+
+    results = index.search_subset(exact.get(1), top_k=3, candidate_vector_ids=[3])
+
+    assert [result.vector_id for result in results] == [3]
+
+
 def test_int8_mmap_index_save_load_and_search(tmp_path) -> None:
     path = tmp_path / "int8_mmap"
     exact = _baseline_index()
@@ -104,6 +113,17 @@ def test_int8_mmap_index_save_load_and_search(tmp_path) -> None:
     assert isinstance(loaded._row_norms, np.memmap)
     assert (path / "row_norms.npy").exists()
     assert [result.vector_id for result in loaded.search(exact.get(1), 2)] == [1, 2]
+
+
+def test_int8_mmap_index_search_subset_scores_only_selected_vector_ids(tmp_path) -> None:
+    path = tmp_path / "int8_mmap"
+    exact = _baseline_index()
+    Int8VectorIndex.from_exact_index(exact).save_mmap(path)
+    loaded = MmapInt8VectorIndex.load(path)
+
+    results = loaded.search_subset(exact.get(1), top_k=3, candidate_vector_ids=[3])
+
+    assert [result.vector_id for result in results] == [3]
 
 
 def test_int8_mmap_load_uses_saved_row_norms(monkeypatch, tmp_path) -> None:

@@ -26,15 +26,16 @@ The 1M proof is useful for serving and deployment validation, but newer arXiv ID
 
 ## Search Path
 
-The current serving path is a 1M int8 NumPy full-scan index loaded from the `int8_mmap` directory format. FAISS is not currently deployed.
+The current serving path is a 1M int8 NumPy index loaded from the `int8_mmap` directory format. FAISS is not currently deployed.
 
 This means:
 
-- Recommendation quality is still based on exact cosine comparison over the int8 vectors.
-- Latency depends on loading and scanning the local mmap `.npy` artifact set.
+- Recommendation quality is still based on exact cosine comparison over int8 vectors.
+- Unfiltered recommendations scan the local mmap `.npy` artifact set.
+- Category and date filters prefilter candidate `vector_id`s in SQLite, then score only that filtered vector subset.
 - ANN work remains a future optimization, not a completed part of the MVP.
 
-The `int8_mmap` format keeps int8 quantization and the same full-scan ranking
+The `int8_mmap` format keeps int8 quantization and exact NumPy ranking
 behavior, but stores precomputed row norms and allows the large arrays to be
 memory-mapped instead of unpacked from one compressed file at process start.
 
@@ -46,6 +47,7 @@ memory-mapped instead of unpacked from one compressed file at process start.
 - Local artifact benchmark after adding `int8_mmap`: `.npz` load 3.079s and search 0.457s; mmap load 0.002s and search 0.544s on the local 1M artifact.
 - Production `int8_mmap` smoke test: returned `indexed_papers=1000000`, `index_kind=int8_mmap`, `index_bytes=396002048`, and `result_count=3` for `0704.0004`.
 - Production warm recommendation after the switch: 0.856s for `0704.0004` with 3 returned results.
+- Production filtered recommendation after candidate prefiltering: 2.433s for `0704.0004` with categories `cs.CL + cs.LG`, returning 10 results.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 

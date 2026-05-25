@@ -9,7 +9,7 @@ from paper_recommender.models import (
 )
 from paper_recommender.recommender import RecommendationError, recommend
 from paper_recommender.storage import connect_db, init_db, mark_deleted, upsert_paper
-from paper_recommender.vector_store import ExactVectorIndex
+from paper_recommender.vector_store import ExactVectorIndex, VectorSearchResult
 
 
 def _paper(
@@ -123,6 +123,31 @@ def test_recommend_applies_multiple_category_filters_with_or_semantics() -> None
 
     results = recommend(conn, index, "1706.03762", top_k=5, categories=["cs.AI", "math.OC"])
 
+    assert [result.arxiv_id for result in results] == ["1111.11111", "3333.33333"]
+
+
+def test_recommend_prefilters_candidates_before_vector_search_when_filters_are_present() -> None:
+    conn = _init_conn_with_papers(
+        [
+            _paper("1706.03762", 1, "cs.CL", "2024-01-15"),
+            _paper("1111.11111", 2, "cs.AI", "2024-01-16"),
+            _paper("2222.22222", 3, "cs.LG", "2024-01-16"),
+            _paper("3333.33333", 4, "math.OC", "2024-01-16"),
+        ]
+    )
+    index = _SubsetOnlyIndex()
+
+    results = recommend(
+        conn,
+        index,
+        "1706.03762",
+        top_k=5,
+        categories=["cs.AI", "math.OC"],
+        date_from="2024-01-16",
+        date_to="2024-01-16",
+    )
+
+    assert index.searched_candidate_vector_ids == (2, 4)
     assert [result.arxiv_id for result in results] == ["1111.11111", "3333.33333"]
 
 
@@ -262,3 +287,28 @@ def test_recommendation_error_string_is_message() -> None:
     assert str(error) == "x"
     assert error.status_code == 404
     assert error.message == "x"
+
+
+class _SubsetOnlyIndex:
+    def __init__(self) -> None:
+        self.searched_candidate_vector_ids: tuple[int, ...] | None = None
+
+    def get(self, vector_id: int) -> np.ndarray | None:
+        if vector_id == 1:
+            return np.array([1.0, 0.0], dtype=np.float32)
+        return None
+
+    def search(self, query: np.ndarray, top_k: int) -> list[VectorSearchResult]:
+        raise AssertionError("filtered recommendations should not full-scan the index")
+
+    def search_subset(
+        self,
+        query: np.ndarray,
+        top_k: int,
+        candidate_vector_ids: list[int] | tuple[int, ...],
+    ) -> list[VectorSearchResult]:
+        self.searched_candidate_vector_ids = tuple(candidate_vector_ids)
+        return [
+            VectorSearchResult(vector_id=vector_id, score=1.0 - index * 0.01)
+            for index, vector_id in enumerate(candidate_vector_ids[:top_k])
+        ]

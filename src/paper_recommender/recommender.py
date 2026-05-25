@@ -11,7 +11,7 @@ from paper_recommender.models import (
     UNKNOWN_ID_MESSAGE,
     VECTOR_MISSING_MESSAGE,
 )
-from paper_recommender.storage import get_paper, get_paper_by_vector_id
+from paper_recommender.storage import get_paper, get_paper_by_vector_id, list_filtered_vector_ids
 from paper_recommender.vector_store import VectorSearchResult
 
 
@@ -26,6 +26,13 @@ class SearchableIndex(Protocol):
     def get(self, vector_id: int) -> np.ndarray | None: ...
 
     def search(self, query: np.ndarray, top_k: int) -> list[VectorSearchResult]: ...
+
+    def search_subset(
+        self,
+        query: np.ndarray,
+        top_k: int,
+        candidate_vector_ids: list[int] | tuple[int, ...] | np.ndarray,
+    ) -> list[VectorSearchResult]: ...
 
 
 def recommend(
@@ -54,8 +61,24 @@ def recommend(
         raise RecommendationError(404, VECTOR_MISSING_MESSAGE)
 
     category_filter = _category_filter(category, categories)
+    candidate_vector_ids = list_filtered_vector_ids(
+        conn,
+        categories=category_filter,
+        date_from=date_from,
+        date_to=date_to,
+        exclude_vector_id=query_paper.vector_id,
+    )
+    if candidate_vector_ids == []:
+        return []
+
+    vector_results = (
+        index.search(query_vector, top_k=max(top_k * 20, 100))
+        if candidate_vector_ids is None
+        else index.search_subset(query_vector, top_k=top_k, candidate_vector_ids=candidate_vector_ids)
+    )
+
     recommendations: list[Recommendation] = []
-    for vector_result in index.search(query_vector, top_k=max(top_k * 20, 100)):
+    for vector_result in vector_results:
         candidate = get_paper_by_vector_id(conn, vector_result.vector_id)
         if candidate is None:
             continue

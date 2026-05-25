@@ -65,6 +65,24 @@ def test_search_with_large_top_k_returns_all_vectors_sorted() -> None:
     assert results[0].score > results[1].score > results[2].score
 
 
+def test_search_subset_scores_only_selected_vector_ids() -> None:
+    index = ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.9, 0.1], dtype=np.float32),
+            3: np.array([0.8, 0.2], dtype=np.float32),
+        }
+    )
+
+    results = index.search_subset(
+        np.array([1.0, 0.0], dtype=np.float32),
+        top_k=5,
+        candidate_vector_ids=[3],
+    )
+
+    assert [item.vector_id for item in results] == [3]
+
+
 def test_search_uses_partial_top_k_selection(monkeypatch) -> None:
     index = ExactVectorIndex.from_items(
         {

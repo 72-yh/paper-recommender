@@ -149,6 +149,50 @@ def list_active_category_counts(conn: sqlite3.Connection) -> list[tuple[str, int
     return sorted(counts.items())
 
 
+def list_filtered_vector_ids(
+    conn: sqlite3.Connection,
+    *,
+    categories: tuple[str, ...],
+    date_from: str | None = None,
+    date_to: str | None = None,
+    exclude_vector_id: int | None = None,
+) -> list[int] | None:
+    if not categories and date_from is None and date_to is None:
+        return None
+
+    where = ["active = 1", "vector_id IS NOT NULL"]
+    params: list[object] = []
+    if exclude_vector_id is not None:
+        where.append("vector_id != ?")
+        params.append(exclude_vector_id)
+    if date_from is not None or date_to is not None:
+        where.append("published_date IS NOT NULL")
+    if date_from is not None:
+        where.append("published_date >= ?")
+        params.append(date_from)
+    if date_to is not None:
+        where.append("published_date <= ?")
+        params.append(date_to)
+
+    rows = conn.execute(
+        f"""
+        SELECT vector_id, categories
+        FROM papers
+        WHERE {' AND '.join(where)}
+        ORDER BY vector_id
+        """,
+        params,
+    )
+
+    selected = set(categories)
+    vector_ids: list[int] = []
+    for row in rows:
+        if selected and not any(category in selected for category in _decode_categories(row["categories"])):
+            continue
+        vector_ids.append(int(row["vector_id"]))
+    return vector_ids
+
+
 def max_vector_id(conn: sqlite3.Connection) -> int:
     row: Any = conn.execute("SELECT COALESCE(MAX(vector_id), 0) AS value FROM papers").fetchone()
     return int(row["value"])

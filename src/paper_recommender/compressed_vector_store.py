@@ -6,7 +6,12 @@ from typing import Protocol
 
 import numpy as np
 
-from paper_recommender.vector_store import ExactVectorIndex, VectorSearchResult, top_k_indices
+from paper_recommender.vector_store import (
+    ExactVectorIndex,
+    VectorSearchResult,
+    candidate_row_indices,
+    top_k_indices,
+)
 
 _INT8_SEARCH_CHUNK_SIZE = 65_536
 _RECALL_BATCH_SIZE = 32
@@ -165,6 +170,22 @@ class Int8VectorIndex:
             for index in ordered_indices
         ]
 
+    def search_subset(
+        self,
+        query: np.ndarray,
+        top_k: int,
+        candidate_vector_ids: list[int] | tuple[int, ...] | np.ndarray,
+    ) -> list[VectorSearchResult]:
+        return _int8_search_subset(
+            self.vector_ids,
+            self.codes,
+            self.scales,
+            self._row_norms,
+            query,
+            top_k,
+            candidate_vector_ids,
+        )
+
     def _decode_rows(self, rows: list[int] | None) -> np.ndarray:
         codes = self.codes if rows is None else self.codes[rows]
         return np.asarray(codes, dtype=np.float32) * self.scales
@@ -220,6 +241,22 @@ class MmapInt8VectorIndex:
             VectorSearchResult(vector_id=int(self.vector_ids[index]), score=float(scores[index]))
             for index in ordered_indices
         ]
+
+    def search_subset(
+        self,
+        query: np.ndarray,
+        top_k: int,
+        candidate_vector_ids: list[int] | tuple[int, ...] | np.ndarray,
+    ) -> list[VectorSearchResult]:
+        return _int8_search_subset(
+            self.vector_ids,
+            self.codes,
+            self.scales,
+            self._row_norms,
+            query,
+            top_k,
+            candidate_vector_ids,
+        )
 
     def _decode_rows(self, rows: list[int] | None) -> np.ndarray:
         codes = self.codes if rows is None else self.codes[rows]
@@ -484,6 +521,37 @@ def _int8_cosine_scores(
             where=row_norms[start:end] != 0,
         )
     return scores
+
+
+def _int8_search_subset(
+    vector_ids: np.ndarray,
+    codes: np.ndarray,
+    scales: np.ndarray,
+    row_norms: np.ndarray,
+    query: np.ndarray,
+    top_k: int,
+    candidate_vector_ids: list[int] | tuple[int, ...] | np.ndarray,
+) -> list[VectorSearchResult]:
+    if top_k <= 0 or len(vector_ids) == 0:
+        return []
+
+    row_indices = candidate_row_indices(vector_ids, candidate_vector_ids)
+    if len(row_indices) == 0:
+        return []
+
+    normalized_query = _normalize_vector(query)
+    weighted_query = normalized_query * scales
+    selected_codes = codes[row_indices]
+    selected_norms = row_norms[row_indices]
+    scores = _int8_cosine_scores(selected_codes, weighted_query, selected_norms)
+    ordered_indices = top_k_indices(scores, top_k)
+    return [
+        VectorSearchResult(
+            vector_id=int(vector_ids[row_indices[index]]),
+            score=float(scores[index]),
+        )
+        for index in ordered_indices
+    ]
 
 
 def _fit_pca(vectors: np.ndarray, pca_dimensions: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
