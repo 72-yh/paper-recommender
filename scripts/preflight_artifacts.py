@@ -56,7 +56,7 @@ def preflight_artifacts(
     db_path = Path(db_path)
     index_path = Path(index_path)
     _require_file(db_path, "DB")
-    _require_file(index_path, "Index")
+    _require_index_path(index_path, index_kind)
 
     db_info = _inspect_db(db_path, include_vector_ids=check_vector_ids)
     index_info = _inspect_index(index_path, index_kind=index_kind)
@@ -94,6 +94,16 @@ def _require_file(path: Path, label: str) -> None:
         raise ArtifactPreflightError(f"{label} path is not a file: {path}")
 
 
+def _require_index_path(path: Path, index_kind: str) -> None:
+    if index_kind == "int8_mmap":
+        if not path.exists():
+            raise ArtifactPreflightError(f"Index directory does not exist: {path}")
+        if not path.is_dir():
+            raise ArtifactPreflightError(f"Index path is not a directory: {path}")
+        return
+    _require_file(path, "Index")
+
+
 def _inspect_db(path: Path, *, include_vector_ids: bool) -> _DbInfo:
     conn = connect_db(path)
     try:
@@ -116,6 +126,8 @@ def _inspect_db(path: Path, *, include_vector_ids: bool) -> _DbInfo:
 
 
 def _inspect_index(path: Path, *, index_kind: str) -> _IndexInfo:
+    if index_kind == "int8_mmap":
+        return _inspect_int8_mmap_index(path)
     try:
         with np.load(path) as data:
             if index_kind == "exact":
@@ -148,6 +160,39 @@ def _inspect_index(path: Path, *, index_kind: str) -> _IndexInfo:
                 bytes=path.stat().st_size,
                 vector_ids=vector_ids,
             )
+    except OSError as exc:
+        raise ArtifactPreflightError(f"Could not read index {path}: {exc}") from exc
+    except ValueError as exc:
+        raise ArtifactPreflightError(f"Could not read index {path}: {exc}") from exc
+
+
+def _inspect_int8_mmap_index(path: Path) -> _IndexInfo:
+    try:
+        vector_ids = np.load(path / "vector_ids.npy", mmap_mode="r")
+        matrix = np.load(path / "codes.npy", mmap_mode="r")
+        scales = np.load(path / "scales.npy", mmap_mode="r")
+        row_norms = np.load(path / "row_norms.npy", mmap_mode="r")
+        _require_matrix(matrix, "codes", path)
+        if vector_ids.ndim != 1:
+            raise ArtifactPreflightError(f"Index vector_ids must be one-dimensional in {path}")
+        if vector_ids.shape[0] != matrix.shape[0]:
+            raise ArtifactPreflightError(
+                f"Index vector_id count does not match vector rows in {path}"
+            )
+        if matrix.dtype != np.int8:
+            raise ArtifactPreflightError(f"Index codes must be int8 in {path}")
+        if scales.ndim != 1 or scales.shape[0] != matrix.shape[1]:
+            raise ArtifactPreflightError(f"Index scales shape does not match codes in {path}")
+        if row_norms.ndim != 1 or row_norms.shape[0] != matrix.shape[0]:
+            raise ArtifactPreflightError(f"Index row_norms shape does not match codes in {path}")
+        return _IndexInfo(
+            vectors=int(matrix.shape[0]),
+            dimensions=int(matrix.shape[1]),
+            bytes=_directory_bytes(path),
+            vector_ids=np.asarray(vector_ids, dtype=np.int64),
+        )
+    except FileNotFoundError as exc:
+        raise ArtifactPreflightError(f"Index {path} is missing required mmap arrays") from exc
     except OSError as exc:
         raise ArtifactPreflightError(f"Could not read index {path}: {exc}") from exc
     except ValueError as exc:
@@ -197,13 +242,17 @@ def _db_vector_ids(conn, count: int) -> np.ndarray:
     return np.fromiter((int(row["vector_id"]) for row in rows), dtype=np.int64, count=count)
 
 
+def _directory_bytes(path: Path) -> int:
+    return sum(child.stat().st_size for child in path.iterdir() if child.is_file())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Validate Paper Recommender deployment artifacts."
     )
     parser.add_argument("--db-path", type=Path, default=Path("data/paper_recommender_1m.db"))
     parser.add_argument("--index-path", type=Path, default=Path("data/vectors_1m_int8.npz"))
-    parser.add_argument("--index-kind", choices=("exact", "int8"), default="int8")
+    parser.add_argument("--index-kind", choices=("exact", "int8", "int8_mmap"), default="int8")
     parser.add_argument("--min-indexed-papers", type=int, default=1)
     parser.add_argument("--skip-vector-id-check", action="store_true")
     args = parser.parse_args()

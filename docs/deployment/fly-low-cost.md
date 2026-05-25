@@ -32,6 +32,11 @@ image and are uploaded to the Fly volume:
 - `data/paper_recommender_1m.db`
 - `data/vectors_1m_int8.npz`
 
+For the no-new-resource load optimization, convert the int8 index locally to
+`data/vectors_1m_int8_mmap/` and upload that directory instead. Set
+`PAPER_RECOMMENDER_INDEX_KIND=int8_mmap` only after all four `.npy` files are on
+the volume.
+
 Current local artifact sizes are about 551 MB total, so a 2GB volume is enough
 for the 1M proof deployment. A larger backfill requires an explicit volume-size
 review before upload.
@@ -75,6 +80,17 @@ Upload the artifacts into the mounted `/app/data` volume:
 fly sftp put data/paper_recommender_1m.db /app/data/paper_recommender_1m.db --app paper-recommender-72yh
 fly sftp put data/vectors_1m_int8.npz /app/data/vectors_1m_int8.npz --app paper-recommender-72yh
 ```
+
+Optional mmap int8 upload after local conversion:
+
+```powershell
+fly sftp shell --app paper-recommender-72yh
+```
+
+Then create `/app/data/vectors_1m_int8_mmap` and upload `vector_ids.npy`,
+`codes.npy`, `scales.npy`, and `row_norms.npy` into that directory. Keep the
+existing `.npz` file on the volume until the mmap path has passed preflight and
+smoke tests.
 
 If direct `put` does not work on the installed `flyctl`, use an interactive
 session instead:

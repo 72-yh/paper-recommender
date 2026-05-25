@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from paper_recommender.arxiv_id import InvalidArxivUrl, parse_arxiv_id
-from paper_recommender.compressed_vector_store import Int8VectorIndex
+from paper_recommender.compressed_vector_store import Int8VectorIndex, MmapInt8VectorIndex
 from paper_recommender.recommender import RecommendationError, recommend
 from paper_recommender.storage import connect_db, get_pipeline_state
 from paper_recommender.vector_store import ExactVectorIndex
@@ -117,6 +117,8 @@ def _load_index(index_path: str | Path, index_kind: str):
         return ExactVectorIndex.load(index_path)
     if index_kind == "int8":
         return Int8VectorIndex.load(index_path)
+    if index_kind == "int8_mmap":
+        return MmapInt8VectorIndex.load(index_path)
     raise RecommendationError(500, f"Unsupported vector index kind: {index_kind}")
 
 

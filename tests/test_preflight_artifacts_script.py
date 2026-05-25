@@ -31,6 +31,26 @@ def test_preflight_artifacts_accepts_matching_int8_db_and_index(tmp_path) -> Non
     assert summary.last_oai_datestamp == "2024-01-03"
 
 
+def test_preflight_artifacts_accepts_matching_int8_mmap_db_and_index(tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors_int8_mmap"
+    exact = _exact_index()
+    _write_db(db_path, vector_ids=(1, 2, 3))
+    Int8VectorIndex.from_exact_index(exact).save_mmap(index_path)
+
+    summary = preflight_artifacts(
+        db_path=db_path,
+        index_path=index_path,
+        index_kind="int8_mmap",
+        min_indexed_papers=3,
+    )
+
+    assert summary.index_kind == "int8_mmap"
+    assert summary.indexed_papers == 3
+    assert summary.index_vectors == 3
+    assert summary.dimensions == 3
+
+
 def test_preflight_artifacts_accepts_matching_exact_db_and_index(tmp_path) -> None:
     db_path = tmp_path / "papers.db"
     index_path = tmp_path / "vectors.npz"

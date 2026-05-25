@@ -39,5 +39,6 @@ def test_current_state_doc_records_faiss_and_latency_status() -> None:
 
     assert "FAISS is not currently deployed" in current_state
     assert "1M int8 NumPy full-scan" in current_state
+    assert "int8_mmap" in current_state
     assert "Cold start" in current_state
     assert "Warm recommendation" in current_state

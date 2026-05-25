@@ -3,6 +3,7 @@ import pytest
 
 from paper_recommender.compressed_vector_store import (
     Int8VectorIndex,
+    MmapInt8VectorIndex,
     PcaFloatVectorIndex,
     PcaInt8VectorIndex,
     recall_at_k,
@@ -88,6 +89,39 @@ def test_int8_index_search_does_not_decode_all_rows_per_query(monkeypatch) -> No
     monkeypatch.setattr(index, "_decode_rows", fail_full_decode)
 
     assert [result.vector_id for result in index.search(exact.get(1), 2)] == [1, 2]
+
+
+def test_int8_mmap_index_save_load_and_search(tmp_path) -> None:
+    path = tmp_path / "int8_mmap"
+    exact = _baseline_index()
+    index = Int8VectorIndex.from_exact_index(exact)
+
+    index.save_mmap(path)
+    loaded = MmapInt8VectorIndex.load(path)
+
+    assert isinstance(loaded.codes, np.memmap)
+    assert isinstance(loaded.vector_ids, np.memmap)
+    assert isinstance(loaded._row_norms, np.memmap)
+    assert (path / "row_norms.npy").exists()
+    assert [result.vector_id for result in loaded.search(exact.get(1), 2)] == [1, 2]
+
+
+def test_int8_mmap_load_uses_saved_row_norms(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "int8_mmap"
+    index = Int8VectorIndex.from_exact_index(_baseline_index())
+    index.save_mmap(path)
+
+    def fail_recompute(*_args, **_kwargs):
+        raise AssertionError("mmap load should use saved row norms")
+
+    monkeypatch.setattr(
+        "paper_recommender.compressed_vector_store._decoded_int8_row_norms",
+        fail_recompute,
+    )
+
+    loaded = MmapInt8VectorIndex.load(path)
+
+    assert np.array_equal(loaded._row_norms, index._row_norms)
 
 
 def test_pca_int8_rejects_invalid_dimensions() -> None:

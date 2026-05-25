@@ -63,6 +63,16 @@ Build a full-dimension int8 index after the exact 1M index is complete:
   --label bge-small-1m-int8-r10
 ```
 
+Convert the compressed `.npz` int8 index to mmap-ready `.npy` files when
+optimizing cold-start load behavior on a low-memory server:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\convert_int8_mmap.py `
+  --input data/vectors_1m_int8.npz `
+  --output data/vectors_1m_int8_mmap `
+  --overwrite
+```
+
 Serve the 1M int8 index locally:
 
 ```powershell
@@ -139,9 +149,17 @@ PAPER_RECOMMENDER_INDEX_PATH=/app/data/vectors_1m_int8.npz
 PAPER_RECOMMENDER_INDEX_KIND=int8
 ```
 
-For a low-cost server, copy or attach the two artifact files to the same paths,
-then run the same image. Do not bake the DB or vector index into the image; the
-current 1M int8 index is about 340 MB and will be replaced as the backfill grows.
+The app also supports the mmap int8 directory format:
+
+```text
+PAPER_RECOMMENDER_INDEX_PATH=/app/data/vectors_1m_int8_mmap
+PAPER_RECOMMENDER_INDEX_KIND=int8_mmap
+```
+
+For a low-cost server, copy or attach the DB plus the selected vector artifact to
+the same paths, then run the same image. Do not bake the DB or vector index into
+the image; the current 1M int8 index is about 340 MB and will be replaced as the
+backfill grows.
 
 Daily serving-index sync after a full current backfill:
 

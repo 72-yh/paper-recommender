@@ -75,6 +75,27 @@ def _build_int8_client(tmp_path) -> TestClient:
     return TestClient(create_app(db_path=db_path, index_path=index_path, index_kind="int8"))
 
 
+def _build_int8_mmap_client(tmp_path) -> TestClient:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors_int8_mmap"
+    conn = connect_db(db_path)
+    init_db(conn)
+    for paper in [
+        _paper("1706.03762", 1, date="2017-06-12"),
+        _paper("1111.11111", 2, date="2020-01-01"),
+    ]:
+        upsert_paper(conn, paper)
+    conn.close()
+    exact = ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.9, 0.1], dtype=np.float32),
+        }
+    )
+    Int8VectorIndex.from_exact_index(exact).save_mmap(index_path)
+    return TestClient(create_app(db_path=db_path, index_path=index_path, index_kind="int8_mmap"))
+
+
 def _assert_top_k_validation_error(
     response,
     expected_words: tuple[str, ...],
@@ -161,6 +182,20 @@ def test_recommend_endpoint_returns_results(tmp_path) -> None:
 
 def test_recommend_endpoint_can_use_int8_index(tmp_path) -> None:
     client = _build_int8_client(tmp_path)
+
+    response = client.post(
+        "/api/recommend",
+        json={"url": "https://arxiv.org/abs/1706.03762", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert result["arxiv_id"] == "1111.11111"
+    assert result["similarity_score"] == pytest.approx(0.9938837, abs=0.01)
+
+
+def test_recommend_endpoint_can_use_int8_mmap_index(tmp_path) -> None:
+    client = _build_int8_mmap_client(tmp_path)
 
     response = client.post(
         "/api/recommend",

@@ -137,6 +137,71 @@ class Int8VectorIndex:
             scales=self.scales,
         )
 
+    def save_mmap(self, path: str | Path) -> None:
+        _save_int8_mmap_arrays(
+            path,
+            vector_ids=self.vector_ids,
+            codes=self.codes,
+            scales=self.scales,
+            row_norms=self._row_norms,
+        )
+
+    def get(self, vector_id: int) -> np.ndarray | None:
+        matches = np.where(self.vector_ids == vector_id)[0]
+        if len(matches) == 0:
+            return None
+        return _normalize_vector(self._decode_rows([int(matches[0])])[0])
+
+    def search(self, query: np.ndarray, top_k: int) -> list[VectorSearchResult]:
+        if top_k <= 0 or len(self.vector_ids) == 0:
+            return []
+
+        normalized_query = _normalize_vector(query)
+        weighted_query = normalized_query * self.scales
+        scores = _int8_cosine_scores(self.codes, weighted_query, self._row_norms)
+        ordered_indices = top_k_indices(scores, top_k)
+        return [
+            VectorSearchResult(vector_id=int(self.vector_ids[index]), score=float(scores[index]))
+            for index in ordered_indices
+        ]
+
+    def _decode_rows(self, rows: list[int] | None) -> np.ndarray:
+        codes = self.codes if rows is None else self.codes[rows]
+        return np.asarray(codes, dtype=np.float32) * self.scales
+
+
+class MmapInt8VectorIndex:
+    def __init__(
+        self,
+        vector_ids: np.ndarray,
+        codes: np.ndarray,
+        scales: np.ndarray,
+        row_norms: np.ndarray,
+    ) -> None:
+        self.vector_ids = _coerce_array(vector_ids, np.int64)
+        self.codes = _coerce_array(codes, np.int8)
+        self.scales = _coerce_array(scales, np.float32)
+        self._row_norms = _coerce_array(row_norms, np.float32)
+
+    @classmethod
+    def load(cls, path: str | Path) -> MmapInt8VectorIndex:
+        directory = Path(path)
+        return cls(
+            np.load(directory / "vector_ids.npy", mmap_mode="r"),
+            np.load(directory / "codes.npy", mmap_mode="r"),
+            np.load(directory / "scales.npy", mmap_mode="r"),
+            np.load(directory / "row_norms.npy", mmap_mode="r"),
+        )
+
+    def save(self, path: str | Path) -> None:
+        _save_int8_mmap_arrays(
+            path,
+            vector_ids=self.vector_ids,
+            codes=self.codes,
+            scales=self.scales,
+            row_norms=self._row_norms,
+        )
+
     def get(self, vector_id: int) -> np.ndarray | None:
         matches = np.where(self.vector_ids == vector_id)[0]
         if len(matches) == 0:
@@ -369,6 +434,28 @@ def _original_dimensions(vectors: np.ndarray) -> int:
 def _quantization_scales(vectors: np.ndarray) -> np.ndarray:
     max_abs = np.max(np.abs(vectors), axis=0)
     return np.where(max_abs == 0, 1.0, max_abs / 127.0).astype(np.float32)
+
+
+def _coerce_array(array: np.ndarray, dtype) -> np.ndarray:
+    if array.dtype == dtype:
+        return array
+    return np.asarray(array, dtype=dtype)
+
+
+def _save_int8_mmap_arrays(
+    path: str | Path,
+    *,
+    vector_ids: np.ndarray,
+    codes: np.ndarray,
+    scales: np.ndarray,
+    row_norms: np.ndarray,
+) -> None:
+    directory = Path(path)
+    directory.mkdir(parents=True, exist_ok=True)
+    np.save(directory / "vector_ids.npy", np.asarray(vector_ids, dtype=np.int64))
+    np.save(directory / "codes.npy", np.asarray(codes, dtype=np.int8))
+    np.save(directory / "scales.npy", np.asarray(scales, dtype=np.float32))
+    np.save(directory / "row_norms.npy", np.asarray(row_norms, dtype=np.float32))
 
 
 def _decoded_int8_row_norms(codes: np.ndarray, scales: np.ndarray) -> np.ndarray:
