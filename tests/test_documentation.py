@@ -38,7 +38,11 @@ def test_real_oai_plan_tracks_current_followup_tasks() -> None:
     assert "--serving-index-kind int8_mmap" in plan
     assert "--target-vector-count" in plan
     assert "Small catch-up result" in plan
+    assert "3M catch-up result" in plan
+    assert "3M local API smoke" in plan
     assert "1,000,050" in plan
+    assert "3,000,000" in plan
+    assert "2469075200" in plan
     assert "scripts/evaluate_ann.py" in plan
     assert "recall@10 `0.9980`" in plan
 
@@ -55,6 +59,8 @@ def test_fly_runbook_documents_current_operational_lessons() -> None:
     assert "--serving-index-kind int8_mmap" in runbook
     assert "--target-vector-count 1010000" in runbook
     assert "first small catch-up smoke run used target 1,000,050" in runbook
+    assert "local 3M catch-up later reached 3,000,000 indexed papers" in runbook
+    assert "2,469,075,200 total artifact bytes" in runbook
     assert "Run daily OAI updates on a local build machine" in runbook
     assert "Machine may auto-stop during long SFTP uploads" in runbook
     assert "first recommendation requests can load the index" in runbook
@@ -73,6 +79,12 @@ def test_current_state_doc_records_faiss_and_latency_status() -> None:
     assert "Local controlled catch-up smoke run" in current_state
     assert "1,000,050" in current_state
     assert "projected_total_artifact_bytes=2421512213" in current_state
+    assert "Local full catch-up run" in current_state
+    assert "3,000,000" in current_state
+    assert "total_artifact_bytes=2469075200" in current_state
+    assert "Local serving benchmark after the 3M catch-up" in current_state
+    assert "Local 3M API smoke test" in current_state
+    assert "`last_oai_datestamp=2026-04-23`" in current_state
     assert "int8_mmap" in current_state
     assert "prefilter candidate `vector_id`s" in current_state
     assert "3M Budget Path" in current_state

@@ -17,21 +17,27 @@ No managed database, Redis, object store, GPU, extra Machine, extra region, or d
 ## Data
 
 - Current deployment artifact: 1M proof index, not the full current arXiv corpus
-- Current local catch-up artifact: 1,000,050 indexed papers after a small real
-  OAI sync from `2016-01-27`
-- SQLite database: `paper_recommender_1m.db`, about 411MB locally after `paper_categories` backfill
-- Vector index: `vectors_1m_int8_mmap/`, 396,002,048 bytes after conversion
+- Current local catch-up artifact: 3,000,000 indexed papers after real OAI
+  catch-up from `2016-01-27` to `2026-04-23`
+- SQLite database: `paper_recommender_1m.db`, about 1.28GB locally after the 3M
+  catch-up and `paper_categories` lookup growth
+- Vector index: `vectors_1m_int8_mmap/`, 1,188,002,048 bytes after 3M conversion
 - Category lookup: `paper_categories`, a derived SQLite table for active indexed paper categories
 - Status endpoint after deployment: 1,000,000 active papers and 1,000,000 indexed papers
 - Last OAI datestamp in the 1M proof: `2016-01-27`
 
-The 1M proof is useful for serving and deployment validation, but newer arXiv IDs may be missing until the corpus is extended.
+The deployed Fly app still serves the 1M proof until the 3M local artifacts are
+uploaded to a larger reviewed volume.
 
 ## 3M Budget Path
 
 The full-corpus target remains the same low-cost architecture: one small Fly Machine, local SQLite, local int8 mmap vectors, no managed database, and no managed vector service.
 
-The current 2GB volume may be too tight for roughly 3M papers. The latest local preflight measured the 1M proof artifact at 807,158,528 bytes after category lookup backfill and projected a 3M corpus at 2,421,475,584 bytes. The expected next storage step is therefore a 4GB volume, not a new paid service. At the current Fly volume price of `$0.15/GB/month`, moving from 2GB to 4GB would add about `$0.30/month`.
+The current 2GB volume is too small for the 3M local artifact. The latest local
+preflight measured the completed 3M artifact set at 2,469,075,200 bytes. The
+expected next storage step is therefore a 4GB volume, not a new paid service. At
+the current Fly volume price of `$0.15/GB/month`, moving from 2GB to 4GB would
+add about `$0.30/month`.
 
 Keeping `min_machines_running = 0` remains the main compute cost guardrail. If the 1GB `shared-cpu-1x` Machine were left running for a full month in the current region, the listed monthly compute price is still below the user budget, but the operational target is lower than always-on usage because expected traffic is about 100 users and the app can auto-stop.
 
@@ -83,12 +89,29 @@ Use it to grow from 1M in measured chunks while preserving OAI datestamp order.
 - Local serving benchmark after the 1,000,050 catch-up with 5 queries: load
   0.0018s, unfiltered p50 461.968ms, unfiltered p95 526.376ms, filtered
   `cs.CL + cs.LG` p50 19.275ms, filtered p95 20.233ms.
+- Local full catch-up run: processed 2,000,937 OAI records, embedded 1,999,950
+  new records with CUDA, reached 3,000,000 active/indexed papers, advanced the
+  OAI cursor to `2026-04-23`, rebuilt the `int8_mmap` serving artifact, and
+  reported recall@10 0.9923 across 1,000 compression sample queries.
+- Local preflight after the 3M catch-up: active/indexed papers 3,000,000,
+  `db_bytes=1281073152`, `index_bytes=1188002048`,
+  `total_artifact_bytes=2469075200`, category lookup rows 5,172,784, and
+  `max_volume_gb=4.0`.
+- Local serving benchmark after the 3M catch-up with 5 queries: load 0.0297s,
+  unfiltered p50 1,564.969ms, unfiltered p95 1,780.531ms, filtered
+  `cs.CL + cs.LG` p50 646.306ms, filtered p95 735.574ms.
+- Local 3M API smoke test with FastAPI `TestClient`: `/health` returned 200,
+  `/api/status` returned 3,000,000 active/indexed papers with
+  `last_oai_datestamp=2026-04-23` and `index_kind=int8_mmap`, `/` returned 200,
+  and `/api/recommend` for `0704.0004` with categories `cs.CL + cs.LG` returned
+  10 results.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 
 ## Known Limits
 
-- The deployed proof covers 1M papers up to OAI datestamp `2016-01-27`, not all roughly 3M current arXiv records.
+- The deployed proof covers 1M papers up to OAI datestamp `2016-01-27`; the
+  local 3M artifact is ready for smoke testing but is not deployed yet.
 - The web UI always requests 10 recommendations and does not expose a Top K control.
 - The web UI exposes a searchable multi-select category filter. Production `/api/categories` returned 168 categories in 2.032s on first call after the deployment, and multi-category recommendation filtering returned HTTP 200.
 - First request after an idle stop can be slow.
@@ -100,6 +123,6 @@ The cold-start number includes Machine auto-start and first index load. Warm rec
 
 ## Next Step
 
-Keep the 1M `int8_mmap` path as the deployed default. Next, use the local sync
-path to extend the OAI datestamp range beyond `2016-01-27`, then run preflight
-before any larger Fly volume or artifact upload.
+Keep the 1M `int8_mmap` path as the deployed default until a Fly 4GB volume
+change is explicitly approved and the 3M artifacts are uploaded and smoke tested
+on Fly.

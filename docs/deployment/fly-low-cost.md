@@ -91,7 +91,9 @@ and does not need GPU, background workers, or a managed vector database.
 
 The first small catch-up smoke run used target 1,000,050, processed 987 OAI
 records from `2016-01-27`, embedded 50 new records on CUDA, and passed preflight
-with a 3M projection still below the reviewed 4GB artifact budget.
+with a 3M projection still below the reviewed 4GB artifact budget. The completed
+local 3M catch-up later reached 3,000,000 indexed papers, advanced the OAI cursor
+to `2026-04-23`, and passed preflight with 2,469,075,200 total artifact bytes.
 
 ## Safe Preparation
 

@@ -136,10 +136,24 @@ without changing Fly resources or skipping OAI datestamps.
 - [x] Run a small real OAI catch-up from the saved `2016-01-27` cursor with CUDA
   embedding and `int8_mmap` output.
 - [x] Run artifact preflight after the catch-up and record timing/counts.
-- [ ] Commit code/documentation changes separately from ignored local data.
+- [x] Run the full 3M catch-up with CUDA embedding and `int8_mmap` output.
+- [x] Run artifact preflight after the full 3M catch-up and record timing/counts.
+- [x] Smoke test the local 3M API path.
+- [x] Commit code/documentation changes separately from ignored local data.
 
 **Small catch-up result:** The first real catch-up target was 1,000,050 vectors.
 It processed 987 OAI records from `2016-01-27`, embedded 50 new records on CUDA,
 rebuilt `data/vectors_1m_int8_mmap`, and reported recall@10 `0.9870` on a
 100-query compression sample. Preflight passed with 1,000,050 active/indexed
 papers and projected 3M artifact bytes `2421512213` under the 4GB review limit.
+
+**3M catch-up result:** The full local catch-up target reached 3,000,000 vectors.
+It processed 2,000,937 OAI records, embedded 1,999,950 new records on CUDA,
+advanced the OAI cursor to `2026-04-23`, rebuilt `data/vectors_1m_int8_mmap`,
+and reported recall@10 `0.9923` on 1,000 compression sample queries. Preflight
+passed with 3,000,000 active/indexed papers, total artifact bytes `2469075200`,
+category lookup rows `5172784`, and `max_volume_gb=4.0`.
+
+**3M local API smoke:** FastAPI `TestClient` returned 200 for `/health`, 200 for
+`/`, 3,000,000 active/indexed papers from `/api/status`, and 10 recommendations
+for `0704.0004` with categories `cs.CL + cs.LG`.
