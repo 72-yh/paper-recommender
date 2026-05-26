@@ -2,8 +2,12 @@ from pathlib import Path
 import subprocess
 import sys
 
+import numpy as np
+
+from paper_recommender.compressed_vector_store import MmapInt8VectorIndex
 from paper_recommender.compressed_vector_store import RecallResult
 from paper_recommender.index_builder import IndexBuildSummary
+from paper_recommender.vector_store import ExactVectorIndex
 from scripts.evaluate_compression import CompressionReport
 from scripts.sync_serving_index import sync_serving_index
 
@@ -110,6 +114,38 @@ def test_sync_serving_index_force_rebuilds_without_vector_changes(tmp_path) -> N
     assert summary.rebuilt_serving_index is True
 
 
+def test_sync_serving_index_can_rebuild_int8_mmap_serving_artifact(tmp_path) -> None:
+    exact_path = tmp_path / "vectors.npz"
+    serving_path = tmp_path / "vectors_int8_mmap"
+    exact = ExactVectorIndex.from_items(
+        {
+            1: np.array([1.0, 0.0], dtype=np.float32),
+            2: np.array([0.9, 0.1], dtype=np.float32),
+        }
+    )
+    exact.save(exact_path)
+
+    def update_index(**_kwargs):
+        return _summary(embedded=1)
+
+    summary = sync_serving_index(
+        db_path=tmp_path / "papers.db",
+        exact_index_path=exact_path,
+        serving_index_path=serving_path,
+        serving_index_kind="int8_mmap",
+        update_index=update_index,
+        record_report=False,
+        sample_size=1,
+    )
+    loaded = MmapInt8VectorIndex.load(serving_path)
+
+    assert summary.rebuilt_serving_index is True
+    assert summary.compression is not None
+    assert summary.compression.output_path == serving_path
+    assert summary.compression.output_bytes > 0
+    assert [result.vector_id for result in loaded.search(exact.get(1), 2)] == [1, 2]
+
+
 def test_sync_serving_index_cli_help_loads() -> None:
     result = subprocess.run(
         [sys.executable, "scripts/sync_serving_index.py", "--help"],
@@ -120,3 +156,4 @@ def test_sync_serving_index_cli_help_loads() -> None:
 
     assert result.returncode == 0
     assert "Resume OAI updates" in result.stdout
+    assert "--serving-index-kind" in result.stdout

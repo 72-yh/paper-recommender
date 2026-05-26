@@ -73,6 +73,9 @@ Daily incremental update:
 - Start from the last successful OAI `datestamp`.
 - Fetch new, modified, and deleted records.
 - Use OAI `datestamp` as the only incremental cursor.
+- Rebuild the serving artifact through `scripts/sync_serving_index.py` when
+  vectors changed. The current deployed artifact format is `int8_mmap`, so the
+  sync command should use `--serving-index-kind int8_mmap`.
 
 Deleted records:
 
@@ -384,3 +387,5 @@ These should be decided during future implementation planning:
 - Missing or unavailable IDs return clear English errors.
 - Compressed index quality is measured before production promotion.
 - The active documentation says when the current deployment is exact/NumPy full-scan and when FAISS or another ANN library has actually been introduced.
+- The daily sync path can rebuild the current `int8_mmap` serving artifact
+  after OAI updates.

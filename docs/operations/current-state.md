@@ -48,6 +48,11 @@ The `int8_mmap` format keeps int8 quantization and exact NumPy ranking
 behavior, but stores precomputed row norms and allows the large arrays to be
 memory-mapped instead of unpacked from one compressed file at process start.
 
+Daily OAI sync now has a matching `int8_mmap` output mode. Local build machines
+can run `scripts/sync_serving_index.py --serving-index-kind int8_mmap` so
+new/modified/deleted OAI records rebuild the same serving artifact format that
+production already uses.
+
 ## Performance Evidence
 
 - Cold start: after stopping the Fly Machine, two concurrent recommendation requests for `0704.0004` both returned HTTP 200 in about 22.6 seconds.
@@ -76,7 +81,11 @@ The cold-start number includes Machine auto-start and first index load. Warm rec
 - USearch f16 is fast on a small local slice, but its artifact size projects to roughly 916MB per 1M vectors and about 2.75GB for 3M vectors before SQLite and the existing int8 mmap index. That likely breaks the current 4GB full-corpus storage target unless it replaces, rather than duplicates, another artifact and passes a stricter quality gate.
 - USearch i8 is smaller, projecting to roughly 1.6GB for 3M vectors, but the measured recall drop is too large to promote as the default path without more tuning.
 - FAISS, USearch, or another ANN index still needs memory usage measurement and a larger-corpus evaluation before replacement.
+- Daily sync should run on a local build machine and upload reviewed artifacts;
+  the Fly Machine should remain a low-cost file-serving API runtime.
 
 ## Next Step
 
-Keep the 1M `int8_mmap` path as the deployed default. Continue Task 8 only if a candidate ANN index can fit the full-corpus volume budget and preserve recall; otherwise proceed to full-corpus build and incremental-update work on the current exact int8 mmap path.
+Keep the 1M `int8_mmap` path as the deployed default. Next, use the local sync
+path to extend the OAI datestamp range beyond `2016-01-27`, then run preflight
+before any larger Fly volume or artifact upload.

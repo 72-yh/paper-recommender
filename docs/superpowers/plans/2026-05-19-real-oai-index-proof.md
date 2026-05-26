@@ -109,3 +109,17 @@ an output artifact of `45,826,960` bytes. USearch i8 was faster and smaller at
 `26,626,960` bytes for 50k vectors, but recall dropped to recall@10 `0.9130`
 and recall@50 `0.9348`. The production path remains unchanged until memory
 usage and full-corpus storage impact are acceptable.
+
+### Task 9: Incremental int8_mmap Serving Sync
+
+**Status:** Started.
+
+**Goal:** Keep the daily OAI update path aligned with the currently deployed
+`int8_mmap` serving artifact so future new/modified/deleted records do not need
+a manual conversion step.
+
+- [x] Add `--serving-index-kind int8_mmap` support to `scripts/sync_serving_index.py`.
+- [x] Convert the rebuilt int8 `.npz` candidate into mmap `.npy` files and
+  record the final mmap artifact path/size in the compression report.
+- [x] Document the daily sync command for local build machines.
+- [x] Verify with focused sync tests, full pytest, and ruff.

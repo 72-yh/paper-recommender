@@ -64,6 +64,29 @@ Before any larger upload, run:
 This checks DB/index consistency, verifies the indexed category lookup table,
 and estimates whether the target corpus fits the reviewed volume budget.
 
+## Daily Local Sync
+
+Run daily OAI updates on a local build machine, not on the small Fly Machine.
+The sync resumes from `last_successful_oai_datestamp`, embeds only changed
+records, and rebuilds the serving artifact only when vectors changed:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\sync_serving_index.py `
+  --db-path data\paper_recommender_1m.db `
+  --exact-index-path data\vectors_1m.npz `
+  --serving-index-path data\vectors_1m_int8_mmap `
+  --serving-index-kind int8_mmap `
+  --device cuda `
+  --embedding-batch-size 512 `
+  --checkpoint-every-records 10000 `
+  --label daily-int8-mmap
+```
+
+After a successful local sync, run the artifact preflight before uploading the
+updated SQLite database and mmap directory to Fly. This keeps production cheap:
+the deployed app serves files and does not need GPU, background workers, or a
+managed vector database.
+
 ## Safe Preparation
 
 These commands should not create paid Fly resources:

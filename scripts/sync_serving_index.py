@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
@@ -18,10 +18,17 @@ try:
 except ModuleNotFoundError:
     from evaluate_compression import CompressionReport, append_report, evaluate_compression
 
+try:
+    from scripts.convert_int8_mmap import convert_int8_index_to_mmap
+except ModuleNotFoundError:
+    from convert_int8_mmap import convert_int8_index_to_mmap
+
 
 @dataclass(frozen=True)
 class ServingSyncSummary:
     update: IndexBuildSummary
+    serving_index_kind: str
+    serving_index_path: Path
     rebuilt_serving_index: bool
     compression: CompressionReport | None
 
@@ -31,6 +38,7 @@ def sync_serving_index(
     db_path: str | Path,
     exact_index_path: str | Path,
     serving_index_path: str | Path,
+    serving_index_kind: str = "int8",
     endpoint: str = OAI_ENDPOINT,
     from_date: str | None = None,
     until_date: str | None = None,
@@ -57,6 +65,10 @@ def sync_serving_index(
     update_index: Callable[..., IndexBuildSummary] = build_index_from_oai,
     evaluate: Callable[..., CompressionReport] = evaluate_compression,
 ) -> ServingSyncSummary:
+    serving_index_path = Path(serving_index_path)
+    if serving_index_kind not in {"int8", "int8_mmap"}:
+        raise ValueError(f"unsupported serving index kind: {serving_index_kind}")
+
     update = update_index(
         endpoint=endpoint,
         db_path=db_path,
@@ -80,17 +92,21 @@ def sync_serving_index(
     if not force_rebuild and not _has_vector_changes(update):
         return ServingSyncSummary(
             update=update,
+            serving_index_kind=serving_index_kind,
+            serving_index_path=serving_index_path,
             rebuilt_serving_index=False,
             compression=None,
         )
 
-    compression = evaluate(
-        input_path=Path(exact_index_path),
-        output_path=Path(serving_index_path),
+    compression = _build_serving_index(
+        exact_index_path=Path(exact_index_path),
+        serving_index_path=serving_index_path,
+        serving_index_kind=serving_index_kind,
         method=compression_method,
         pca_dimensions=pca_dimensions,
         top_k=top_k,
         sample_size=sample_size,
+        evaluate=evaluate,
     )
     if record_report:
         append_report(
@@ -101,6 +117,8 @@ def sync_serving_index(
         )
     return ServingSyncSummary(
         update=update,
+        serving_index_kind=serving_index_kind,
+        serving_index_path=serving_index_path,
         rebuilt_serving_index=True,
         compression=compression,
     )
@@ -108,6 +126,65 @@ def sync_serving_index(
 
 def _has_vector_changes(summary: IndexBuildSummary) -> bool:
     return summary.embedded > 0 or summary.deleted > 0
+
+
+def _build_serving_index(
+    *,
+    exact_index_path: Path,
+    serving_index_path: Path,
+    serving_index_kind: str,
+    method: str,
+    pca_dimensions: int | None,
+    top_k: int,
+    sample_size: int,
+    evaluate: Callable[..., CompressionReport],
+) -> CompressionReport:
+    if serving_index_kind == "int8":
+        return evaluate(
+            input_path=exact_index_path,
+            output_path=serving_index_path,
+            method=method,
+            pca_dimensions=pca_dimensions,
+            top_k=top_k,
+            sample_size=sample_size,
+        )
+
+    if method != "int8" or pca_dimensions is not None:
+        raise ValueError("int8_mmap serving index requires compression_method='int8' without PCA")
+
+    temporary_int8_path = _temporary_int8_path(serving_index_path)
+    try:
+        report = evaluate(
+            input_path=exact_index_path,
+            output_path=temporary_int8_path,
+            method=method,
+            pca_dimensions=None,
+            top_k=top_k,
+            sample_size=sample_size,
+        )
+        conversion = convert_int8_index_to_mmap(
+            input_path=temporary_int8_path,
+            output_path=serving_index_path,
+            overwrite=True,
+        )
+        return replace(
+            report,
+            output_path=serving_index_path,
+            output_bytes=conversion.output_bytes,
+        )
+    finally:
+        _unlink_if_exists(temporary_int8_path)
+
+
+def _temporary_int8_path(serving_index_path: Path) -> Path:
+    return serving_index_path.with_name(f"{serving_index_path.name}.tmp.npz")
+
+
+def _unlink_if_exists(path: Path) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def main() -> None:
@@ -136,6 +213,7 @@ def main() -> None:
     parser.add_argument("--db-path", type=Path, default=Path("data/paper_recommender_1m.db"))
     parser.add_argument("--exact-index-path", type=Path, default=Path("data/vectors_1m.npz"))
     parser.add_argument("--serving-index-path", type=Path, default=Path("data/vectors_1m_int8.npz"))
+    parser.add_argument("--serving-index-kind", choices=("int8", "int8_mmap"), default="int8")
     parser.add_argument("--jsonl-report", type=Path, default=Path("docs/evaluations/compression-runs.jsonl"))
     parser.add_argument("--markdown-report", type=Path, default=Path("docs/evaluations/compression-runs.md"))
     parser.add_argument("--force-rebuild", action="store_true")
@@ -147,6 +225,7 @@ def main() -> None:
         db_path=args.db_path,
         exact_index_path=args.exact_index_path,
         serving_index_path=args.serving_index_path,
+        serving_index_kind=args.serving_index_kind,
         from_date=args.from_date,
         until_date=args.until_date,
         batch_limit=args.batch_limit,
@@ -181,6 +260,8 @@ def _format_summary(summary: ServingSyncSummary) -> str:
         f"embedded={update.embedded}",
         f"deleted={update.deleted}",
         f"last_datestamp={update.last_datestamp}",
+        f"serving_index_kind={summary.serving_index_kind}",
+        f"serving_index_path={summary.serving_index_path}",
         f"rebuilt_serving_index={summary.rebuilt_serving_index}",
     ]
     if summary.compression is not None:
