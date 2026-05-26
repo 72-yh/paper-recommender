@@ -98,6 +98,14 @@
 **Goal:** Replace the NumPy full-scan path only after measuring recall and latency against the current exact/int8 baseline.
 
 - [x] Build a benchmark harness over the existing 1M proof artifacts.
-- [ ] Compare FAISS, USearch, or another local ANN index against the current NumPy full-scan path.
+- [x] Compare FAISS, USearch, or another local ANN index against the current NumPy full-scan path.
 - [ ] Measure recall@10, recall@50, cold-load cost, warm latency, artifact size, and memory usage.
 - [ ] Promote an ANN path only if it improves latency without an unacceptable quality drop.
+
+**USearch local evaluation note:** Added `scripts/evaluate_ann.py` with an optional
+`usearch` dependency. On a 50k slice of the 1M `int8_mmap` artifact, USearch f16
+reported recall@10 `0.9980`, recall@50 `0.9886`, p95 search about `1.3ms`, and
+an output artifact of `45,826,960` bytes. USearch i8 was faster and smaller at
+`26,626,960` bytes for 50k vectors, but recall dropped to recall@10 `0.9130`
+and recall@50 `0.9348`. The production path remains unchanged until memory
+usage and full-corpus storage impact are acceptable.

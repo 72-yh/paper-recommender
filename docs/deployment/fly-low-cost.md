@@ -37,6 +37,12 @@ For the no-new-resource load optimization, convert the int8 index locally to
 `PAPER_RECOMMENDER_INDEX_KIND=int8_mmap` only after all four `.npy` files are on
 the volume.
 
+USearch and other ANN indexes are local evaluation candidates only. Do not
+upload an ANN artifact or add `usearch` to the production image unless a larger
+evaluation shows that it fits the reviewed volume budget and preserves recall.
+The first local 50k USearch f16 candidate was fast but projected to about
+2.75GB for 3M vectors by itself, before SQLite and the existing int8 mmap files.
+
 Current local 1M artifact sizes are about 807 MB total after `paper_categories`
 backfill, so a 2GB volume is enough for the 1M proof deployment. The latest
 3M projection is about 2.42 GB, so a full-corpus upload should use a 4GB volume

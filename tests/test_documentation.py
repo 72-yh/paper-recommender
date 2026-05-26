@@ -15,9 +15,11 @@ def test_design_doc_reflects_current_mvp_decisions() -> None:
     assert "multi-select category filter" in design
     assert "OR semantics" in design
     assert "Fly.io low-cost deployment" in design
-    assert "FAISS is not implemented in the current MVP" in design
+    assert "FAISS and USearch are not deployed in the current MVP" in design
     assert "NumPy full-scan" in design
     assert "score only that filtered vector subset" in design
+    assert "USearch has a local" in design
+    assert "USearch i8 is smaller but currently loses too much recall" in design
     assert "paper_categories" in design
     assert "4GB volume" in design
 
@@ -29,6 +31,8 @@ def test_real_oai_plan_tracks_current_followup_tasks() -> None:
     assert "Task 7: Current Serving Performance Baseline" in plan
     assert "Task 8: ANN Serving Index Evaluation" in plan
     assert "- [x] Build a benchmark harness over the existing 1M proof artifacts." in plan
+    assert "scripts/evaluate_ann.py" in plan
+    assert "recall@10 `0.9980`" in plan
 
 
 def test_fly_runbook_documents_current_operational_lessons() -> None:
@@ -38,6 +42,7 @@ def test_fly_runbook_documents_current_operational_lessons() -> None:
     assert "Do not use a remote builder" in runbook
     assert "--target-indexed-papers 3000000" in runbook
     assert "--max-volume-gb 4" in runbook
+    assert "USearch and other ANN indexes are local evaluation candidates only" in runbook
     assert "Machine may auto-stop during long SFTP uploads" in runbook
     assert "first recommendation requests can load the index" in runbook
 
@@ -45,13 +50,15 @@ def test_fly_runbook_documents_current_operational_lessons() -> None:
 def test_current_state_doc_records_faiss_and_latency_status() -> None:
     current_state = CURRENT_STATE.read_text(encoding="utf-8")
 
-    assert "FAISS is not currently deployed" in current_state
-    assert "1M `int8_mmap` benchmark harness" in current_state
+    assert "FAISS and USearch are not currently deployed" in current_state
+    assert "Local serving benchmark harness" in current_state
+    assert "Local USearch f16 ANN evaluation" in current_state
+    assert "recall@10 0.9980" in current_state
+    assert "USearch i8 is smaller" in current_state
     assert "int8_mmap" in current_state
     assert "prefilter candidate `vector_id`s" in current_state
     assert "3M Budget Path" in current_state
     assert "$0.30/month" in current_state
     assert "projected_total_artifact_bytes=2421475584" in current_state
-    assert "Local serving benchmark harness" in current_state
     assert "Cold start" in current_state
     assert "Warm recommendation" in current_state

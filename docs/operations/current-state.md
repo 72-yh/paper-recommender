@@ -1,6 +1,6 @@
 # Current Operational State
 
-Last updated: 2026-05-25
+Last updated: 2026-05-26
 
 ## Deployment
 
@@ -35,14 +35,14 @@ Keeping `min_machines_running = 0` remains the main compute cost guardrail. If t
 
 ## Search Path
 
-The current serving path is a 1M int8 NumPy index loaded from the `int8_mmap` directory format. FAISS is not currently deployed.
+The current serving path is a 1M int8 NumPy index loaded from the `int8_mmap` directory format. FAISS and USearch are not currently deployed.
 
 This means:
 
 - Recommendation quality is still based on exact cosine comparison over int8 vectors.
 - Unfiltered recommendations scan the local mmap `.npy` artifact set.
 - Category and date filters prefilter candidate `vector_id`s through indexed SQLite lookup tables, then score only that filtered vector subset.
-- ANN work remains a future optimization, not a completed part of the MVP.
+- ANN work remains a measured optional optimization, not a completed part of the MVP.
 
 The `int8_mmap` format keeps int8 quantization and exact NumPy ranking
 behavior, but stores precomputed row norms and allows the large arrays to be
@@ -61,6 +61,9 @@ memory-mapped instead of unpacked from one compressed file at process start.
 - Production warm filtered recommendation after indexed category lookup: 0.56s for `0704.0004` with categories `cs.CL + cs.LG`, returning 10 results.
 - Local 3M storage projection preflight: `target_indexed_papers=3000000`, `projected_total_artifact_bytes=2421475584`, `max_volume_gb=4.0`, category lookup rows `1558846`.
 - Local serving benchmark harness on the 1M `int8_mmap` artifact with 5 queries: load 0.0288s, unfiltered p50 532.645ms, unfiltered p95 788.231ms, filtered `cs.CL + cs.LG` p50 25.241ms, filtered p95 40.910ms.
+- Local USearch f16 ANN evaluation on a 50k slice of the 1M `int8_mmap` artifact: build about 16.0s, load 0.048s, search p50 0.910ms, search p95 1.256ms, output 45,826,960 bytes, recall@10 0.9980 across 100 queries.
+- Local USearch f16 recall@50 evaluation on the same 50k slice: build about 17.0s, load 0.044s, search p50 0.947ms, search p95 1.307ms, output 45,826,960 bytes, recall@50 0.9886 across 100 queries.
+- Local USearch i8 ANN evaluation on the same 50k slice: output 26,626,960 bytes, search p95 under 0.7ms, recall@10 0.9130, and recall@50 0.9348 across 100 queries.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 
@@ -70,8 +73,10 @@ The cold-start number includes Machine auto-start and first index load. Warm rec
 - The web UI always requests 10 recommendations and does not expose a Top K control.
 - The web UI exposes a searchable multi-select category filter. Production `/api/categories` returned 168 categories in 2.032s on first call after the deployment, and multi-category recommendation filtering returned HTTP 200.
 - First request after an idle stop can be slow.
-- FAISS, USearch, or another ANN index still needs recall and latency evaluation before replacement.
+- USearch f16 is fast on a small local slice, but its artifact size projects to roughly 916MB per 1M vectors and about 2.75GB for 3M vectors before SQLite and the existing int8 mmap index. That likely breaks the current 4GB full-corpus storage target unless it replaces, rather than duplicates, another artifact and passes a stricter quality gate.
+- USearch i8 is smaller, projecting to roughly 1.6GB for 3M vectors, but the measured recall drop is too large to promote as the default path without more tuning.
+- FAISS, USearch, or another ANN index still needs memory usage measurement and a larger-corpus evaluation before replacement.
 
 ## Next Step
 
-Use the 1M `int8_mmap` benchmark harness as the baseline for Task 8. Evaluate FAISS, USearch, or another local ANN index against it with recall@10, recall@50, warm latency, cold-load cost, memory usage, and artifact size before changing the serving path.
+Keep the 1M `int8_mmap` path as the deployed default. Continue Task 8 only if a candidate ANN index can fit the full-corpus volume budget and preserve recall; otherwise proceed to full-corpus build and incremental-update work on the current exact int8 mmap path.

@@ -52,7 +52,9 @@ Current MVP state:
 - The deployed proof index contains 1M active papers, not the full and current arXiv corpus.
 - The serving index is scalar-quantized int8 and searched with a NumPy implementation.
 - Unfiltered requests use a full vector scan. Category and date filters first build candidate `vector_id`s from indexed SQLite lookup tables, then score only that filtered vector subset.
-- FAISS is not implemented in the current MVP. FAISS, USearch, or another ANN index should be evaluated before replacing the current search path.
+- FAISS and USearch are not deployed in the current MVP. USearch has a local
+  evaluation harness, but it should not replace the current search path until
+  full-corpus storage impact, memory usage, and recall are acceptable.
 - The first recommendation request after a cold start can load the 340MB index; the app uses a process-local load lock so concurrent first requests do not duplicate that memory load.
 
 ### OAI-PMH Ingestion
@@ -205,7 +207,7 @@ The full title and abstract for every paper should not be stored for display in 
 4. Reject missing, inactive, or vectorless records with a clear English error.
 5. Retrieve the query vector from the local index.
 6. When category or date filters are present, prefilter candidate `vector_id`s in SQLite.
-7. Run vector search. The current MVP uses NumPy full-scan for unfiltered requests and NumPy subset scoring for filtered requests; an ANN index is future work.
+7. Run vector search. The current MVP uses NumPy full-scan for unfiltered requests and NumPy subset scoring for filtered requests; an ANN index is evaluated as an optional future replacement.
 8. Exclude the query paper itself.
 9. Exclude inactive or deleted papers.
 10. Apply optional category and date filters. Multiple selected categories use OR semantics.
@@ -282,7 +284,8 @@ Operational observations from the 1M proof:
 - The deployed status endpoint reports 1,000,000 active and indexed papers with last OAI datestamp `2016-01-27`.
 - A concurrent cold-start recommendation pair completed successfully in about 22.6 seconds.
 - A concurrent warm recommendation pair completed successfully in about 1.3 seconds.
-- These measurements are for the 1M int8 NumPy full-scan path, not FAISS.
+- These measurements are for the 1M int8 NumPy full-scan path, not FAISS or
+  USearch.
 
 ### Fallback: Free VM Or Low-Cost VPS
 
@@ -362,7 +365,9 @@ Promotion rule:
 
 These should be decided during future implementation planning:
 
-- Exact ANN vector library: FAISS, USearch, or HNSW-based local index.
+- Exact ANN vector library and configuration: FAISS, USearch, or HNSW-based
+  local index. USearch f16 is fast in a 50k local slice but increases artifact
+  size materially; USearch i8 is smaller but currently loses too much recall.
 - Exact compression configuration beyond the current full-dimension int8 scalar quantization.
 - Exact recall thresholds for promotion.
 - Whether a full-current corpus can fit within the current Fly volume and memory budget.
