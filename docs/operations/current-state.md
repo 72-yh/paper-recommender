@@ -17,6 +17,8 @@ No managed database, Redis, object store, GPU, extra Machine, extra region, or d
 ## Data
 
 - Current deployment artifact: 1M proof index, not the full current arXiv corpus
+- Current local catch-up artifact: 1,000,050 indexed papers after a small real
+  OAI sync from `2016-01-27`
 - SQLite database: `paper_recommender_1m.db`, about 411MB locally after `paper_categories` backfill
 - Vector index: `vectors_1m_int8_mmap/`, 396,002,048 bytes after conversion
 - Category lookup: `paper_categories`, a derived SQLite table for active indexed paper categories
@@ -53,6 +55,9 @@ can run `scripts/sync_serving_index.py --serving-index-kind int8_mmap` so
 new/modified/deleted OAI records rebuild the same serving artifact format that
 production already uses.
 
+The same sync script accepts `--target-vector-count` for catch-up backfills.
+Use it to grow from 1M in measured chunks while preserving OAI datestamp order.
+
 ## Performance Evidence
 
 - Cold start: after stopping the Fly Machine, two concurrent recommendation requests for `0704.0004` both returned HTTP 200 in about 22.6 seconds.
@@ -69,6 +74,15 @@ production already uses.
 - Local USearch f16 ANN evaluation on a 50k slice of the 1M `int8_mmap` artifact: build about 16.0s, load 0.048s, search p50 0.910ms, search p95 1.256ms, output 45,826,960 bytes, recall@10 0.9980 across 100 queries.
 - Local USearch f16 recall@50 evaluation on the same 50k slice: build about 17.0s, load 0.044s, search p50 0.947ms, search p95 1.307ms, output 45,826,960 bytes, recall@50 0.9886 across 100 queries.
 - Local USearch i8 ANN evaluation on the same 50k slice: output 26,626,960 bytes, search p95 under 0.7ms, recall@10 0.9130, and recall@50 0.9348 across 100 queries.
+- Local controlled catch-up smoke run: starting from OAI datestamp `2016-01-27`,
+  processed 987 records, embedded 50 new records with CUDA, rebuilt the
+  `int8_mmap` serving artifact, and kept `last_datestamp=2016-01-27`.
+- Local preflight after the 1,000,050 catch-up: active/indexed papers 1,000,050,
+  `index_bytes=396021848`, `total_artifact_bytes=807211096`,
+  `projected_total_artifact_bytes=2421512213`, and `max_volume_gb=4.0`.
+- Local serving benchmark after the 1,000,050 catch-up with 5 queries: load
+  0.0018s, unfiltered p50 461.968ms, unfiltered p95 526.376ms, filtered
+  `cs.CL + cs.LG` p50 19.275ms, filtered p95 20.233ms.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 

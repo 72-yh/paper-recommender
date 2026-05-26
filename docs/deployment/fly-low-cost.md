@@ -76,16 +76,22 @@ records, and rebuilds the serving artifact only when vectors changed:
   --exact-index-path data\vectors_1m.npz `
   --serving-index-path data\vectors_1m_int8_mmap `
   --serving-index-kind int8_mmap `
+  --target-vector-count 1010000 `
   --device cuda `
   --embedding-batch-size 512 `
   --checkpoint-every-records 10000 `
   --label daily-int8-mmap
 ```
 
-After a successful local sync, run the artifact preflight before uploading the
-updated SQLite database and mmap directory to Fly. This keeps production cheap:
-the deployed app serves files and does not need GPU, background workers, or a
-managed vector database.
+Increase `--target-vector-count` in controlled steps, for example 1.01M, 1.1M,
+then larger windows after timing is known. After a successful local sync, run
+the artifact preflight before uploading the updated SQLite database and mmap
+directory to Fly. This keeps production cheap: the deployed app serves files
+and does not need GPU, background workers, or a managed vector database.
+
+The first small catch-up smoke run used target 1,000,050, processed 987 OAI
+records from `2016-01-27`, embedded 50 new records on CUDA, and passed preflight
+with a 3M projection still below the reviewed 4GB artifact budget.
 
 ## Safe Preparation
 

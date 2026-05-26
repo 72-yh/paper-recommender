@@ -76,6 +76,8 @@ Daily incremental update:
 - Rebuild the serving artifact through `scripts/sync_serving_index.py` when
   vectors changed. The current deployed artifact format is `int8_mmap`, so the
   sync command should use `--serving-index-kind int8_mmap`.
+- Use `--target-vector-count` during catch-up backfills so the corpus can grow
+  in measured chunks instead of one long unbounded run.
 
 Deleted records:
 

@@ -123,3 +123,23 @@ a manual conversion step.
   record the final mmap artifact path/size in the compression report.
 - [x] Document the daily sync command for local build machines.
 - [x] Verify with focused sync tests, full pytest, and ruff.
+
+### Task 10: Controlled Full-Corpus Catch-Up
+
+**Status:** Started.
+
+**Goal:** Extend the local 1M proof toward the full corpus in measured chunks
+without changing Fly resources or skipping OAI datestamps.
+
+- [x] Add `--target-vector-count` support to `scripts/sync_serving_index.py` so
+  catch-up jobs can stop at explicit corpus sizes.
+- [x] Run a small real OAI catch-up from the saved `2016-01-27` cursor with CUDA
+  embedding and `int8_mmap` output.
+- [x] Run artifact preflight after the catch-up and record timing/counts.
+- [ ] Commit code/documentation changes separately from ignored local data.
+
+**Small catch-up result:** The first real catch-up target was 1,000,050 vectors.
+It processed 987 OAI records from `2016-01-27`, embedded 50 new records on CUDA,
+rebuilt `data/vectors_1m_int8_mmap`, and reported recall@10 `0.9870` on a
+100-query compression sample. Preflight passed with 1,000,050 active/indexed
+papers and projected 3M artifact bytes `2421512213` under the 4GB review limit.

@@ -53,6 +53,7 @@ def sync_serving_index(
     fetch_retry_delay_seconds: float = DEFAULT_RETRY_DELAY_SECONDS,
     checkpoint_every_records: int | None = 10_000,
     embedding_batch_size: int = 128,
+    target_vector_count: int | None = None,
     compression_method: str = "int8",
     pca_dimensions: int | None = None,
     top_k: int = 10,
@@ -87,6 +88,7 @@ def sync_serving_index(
         fetch_retry_delay_seconds=fetch_retry_delay_seconds,
         checkpoint_every_records=checkpoint_every_records,
         embedding_batch_size=embedding_batch_size,
+        target_vector_count=target_vector_count,
     )
 
     if not force_rebuild and not _has_vector_changes(update):
@@ -205,6 +207,7 @@ def main() -> None:
     parser.add_argument("--fetch-retry-delay-seconds", type=float, default=DEFAULT_RETRY_DELAY_SECONDS)
     parser.add_argument("--checkpoint-every-records", type=int, default=10_000)
     parser.add_argument("--embedding-batch-size", type=int, default=128)
+    parser.add_argument("--target-vector-count", type=int)
     parser.add_argument("--compression-method", choices=("int8", "pca-int8", "pca-float"), default="int8")
     parser.add_argument("--pca-dimensions", type=int)
     parser.add_argument("--top-k", type=int, default=10)
@@ -239,6 +242,7 @@ def main() -> None:
         fetch_retry_delay_seconds=args.fetch_retry_delay_seconds,
         checkpoint_every_records=args.checkpoint_every_records,
         embedding_batch_size=args.embedding_batch_size,
+        target_vector_count=args.target_vector_count,
         compression_method=args.compression_method,
         pca_dimensions=args.pca_dimensions,
         top_k=args.top_k,

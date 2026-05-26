@@ -114,6 +114,26 @@ def test_sync_serving_index_force_rebuilds_without_vector_changes(tmp_path) -> N
     assert summary.rebuilt_serving_index is True
 
 
+def test_sync_serving_index_passes_target_vector_count_to_update(tmp_path) -> None:
+    seen_target_count: list[int | None] = []
+
+    def update_index(**kwargs):
+        seen_target_count.append(kwargs["target_vector_count"])
+        return _summary()
+
+    summary = sync_serving_index(
+        db_path=tmp_path / "papers.db",
+        exact_index_path=tmp_path / "vectors.npz",
+        serving_index_path=tmp_path / "vectors_int8.npz",
+        update_index=update_index,
+        target_vector_count=1_001_000,
+        record_report=False,
+    )
+
+    assert seen_target_count == [1_001_000]
+    assert summary.rebuilt_serving_index is False
+
+
 def test_sync_serving_index_can_rebuild_int8_mmap_serving_artifact(tmp_path) -> None:
     exact_path = tmp_path / "vectors.npz"
     serving_path = tmp_path / "vectors_int8_mmap"
@@ -157,3 +177,4 @@ def test_sync_serving_index_cli_help_loads() -> None:
     assert result.returncode == 0
     assert "Resume OAI updates" in result.stdout
     assert "--serving-index-kind" in result.stdout
+    assert "--target-vector-count" in result.stdout
