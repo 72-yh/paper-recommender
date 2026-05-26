@@ -93,11 +93,11 @@
 
 ### Task 8: ANN Serving Index Evaluation
 
-**Status:** Not started.
+**Status:** Started.
 
 **Goal:** Replace the NumPy full-scan path only after measuring recall and latency against the current exact/int8 baseline.
 
-- [ ] Build a benchmark harness over the existing 1M proof artifacts.
+- [x] Build a benchmark harness over the existing 1M proof artifacts.
 - [ ] Compare FAISS, USearch, or another local ANN index against the current NumPy full-scan path.
 - [ ] Measure recall@10, recall@50, cold-load cost, warm latency, artifact size, and memory usage.
 - [ ] Promote an ANN path only if it improves latency without an unacceptable quality drop.

@@ -60,6 +60,7 @@ memory-mapped instead of unpacked from one compressed file at process start.
 - Production category lookup backfill after deploying `paper_categories`: first `/api/categories` call rebuilt the lookup in 35.63s for the 1M proof database; the next `/api/categories` call returned in 0.502s.
 - Production warm filtered recommendation after indexed category lookup: 0.56s for `0704.0004` with categories `cs.CL + cs.LG`, returning 10 results.
 - Local 3M storage projection preflight: `target_indexed_papers=3000000`, `projected_total_artifact_bytes=2421475584`, `max_volume_gb=4.0`, category lookup rows `1558846`.
+- Local serving benchmark harness on the 1M `int8_mmap` artifact with 5 queries: load 0.0288s, unfiltered p50 532.645ms, unfiltered p95 788.231ms, filtered `cs.CL + cs.LG` p50 25.241ms, filtered p95 40.910ms.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 
@@ -73,4 +74,4 @@ The cold-start number includes Machine auto-start and first index load. Warm rec
 
 ## Next Step
 
-Use this 1M int8 NumPy full-scan deployment as the baseline for Task 8. Evaluate FAISS, USearch, or another local ANN index against it with recall@10, recall@50, warm latency, cold-load cost, memory usage, and artifact size before changing the serving path.
+Use the 1M `int8_mmap` benchmark harness as the baseline for Task 8. Evaluate FAISS, USearch, or another local ANN index against it with recall@10, recall@50, warm latency, cold-load cost, memory usage, and artifact size before changing the serving path.

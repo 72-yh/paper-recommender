@@ -28,6 +28,7 @@ def test_real_oai_plan_tracks_current_followup_tasks() -> None:
     assert "Task 6: Container And Fly Deployment" in plan
     assert "Task 7: Current Serving Performance Baseline" in plan
     assert "Task 8: ANN Serving Index Evaluation" in plan
+    assert "- [x] Build a benchmark harness over the existing 1M proof artifacts." in plan
 
 
 def test_fly_runbook_documents_current_operational_lessons() -> None:
@@ -45,11 +46,12 @@ def test_current_state_doc_records_faiss_and_latency_status() -> None:
     current_state = CURRENT_STATE.read_text(encoding="utf-8")
 
     assert "FAISS is not currently deployed" in current_state
-    assert "1M int8 NumPy full-scan" in current_state
+    assert "1M `int8_mmap` benchmark harness" in current_state
     assert "int8_mmap" in current_state
     assert "prefilter candidate `vector_id`s" in current_state
     assert "3M Budget Path" in current_state
     assert "$0.30/month" in current_state
     assert "projected_total_artifact_bytes=2421475584" in current_state
+    assert "Local serving benchmark harness" in current_state
     assert "Cold start" in current_state
     assert "Warm recommendation" in current_state
