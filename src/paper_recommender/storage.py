@@ -56,6 +56,9 @@ ON paper_categories(category, published_date, vector_id);
 CREATE INDEX IF NOT EXISTS idx_papers_active_published_vector
 ON papers(published_date, vector_id)
 WHERE active = 1 AND vector_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_papers_status_count
+ON papers(active, vector_id);
 """
 
 CATEGORY_LOOKUP_BACKFILL_STATE_KEY = "paper_categories_backfilled_v1"

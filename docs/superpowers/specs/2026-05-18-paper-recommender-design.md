@@ -4,7 +4,12 @@
 
 Build a low-cost paper recommendation web service using arXiv metadata. The service recommends papers similar to a user-provided arXiv URL by using metadata embeddings, not PDF full text. The target operating scale is about 100 daily users, so the design prioritizes zero-cost or very low-cost hosting while preserving recommendation quality through measured vector compression.
 
-The current MVP uses a Fly.io low-cost deployment: one small Machine, one local volume, local SQLite, and a local vector index. The 1M proof uses a 2GB volume; the full roughly 3M corpus may need a 4GB volume while staying under the same low-cost budget target. Earlier Oracle Cloud Always Free and low-cost VPS options remain fallback targets, but the active deployment path is Fly.io because the user could register billing there and the architecture stayed file-based.
+The current MVP uses a Fly.io low-cost deployment: one small Machine, one 4GB
+local volume, local SQLite, and a local vector index. The deployed corpus now
+contains 3,000,000 indexed papers. Earlier Oracle Cloud Always Free and low-cost
+VPS options remain fallback targets, but the active deployment path is Fly.io
+because the user could register billing there and the architecture stayed
+file-based.
 
 ## Goals
 
@@ -49,13 +54,17 @@ The system has four main parts:
 
 Current MVP state:
 
-- The deployed proof index contains 1M active papers, not the full and current arXiv corpus.
+- The deployed index contains 3,000,000 active indexed papers up to OAI
+  datestamp `2026-04-23`.
 - The serving index is scalar-quantized int8 and searched with a NumPy implementation.
 - Unfiltered requests use a full vector scan. Category and date filters first build candidate `vector_id`s from indexed SQLite lookup tables, then score only that filtered vector subset.
 - FAISS and USearch are not deployed in the current MVP. USearch has a local
   evaluation harness, but it should not replace the current search path until
   full-corpus storage impact, memory usage, and recall are acceptable.
-- The first recommendation request after a cold start can load the 340MB index; the app uses a process-local load lock so concurrent first requests do not duplicate that memory load.
+- The current 3M exact-scan path is correct but too slow on the cheapest Fly
+  runtime: measured production recommendations were about 60-70s on
+  `shared-cpu-1x`, 1GB RAM. The app uses a process-local load lock so concurrent
+  first requests do not duplicate index loading.
 
 ### OAI-PMH Ingestion
 
@@ -109,7 +118,9 @@ The target production vector index stores compressed vectors only:
 
 Auto-encoder compression is not part of the default design. It can be evaluated later only if it beats PCA/OPQ on recall while keeping operational complexity acceptable.
 
-The current 1M proof skips PCA/OPQ and stores full-dimension int8 vectors. PCA/OPQ can still be reconsidered after a larger quality evaluation, but it is not required before the next serving milestone.
+The current 3M deployment skips PCA/OPQ and stores full-dimension int8 vectors.
+PCA/OPQ can still be reconsidered after a larger quality evaluation, but it is
+not required before the next serving milestone.
 
 ### Compression Quality Gate
 
@@ -275,7 +286,9 @@ Target cost: below `$10/month`, preferably near the free allowance.
 
 The active deployment is `paper-recommender-72yh` on Fly.io. It uses one `shared-cpu-1x` Machine with 1GB RAM, one local volume, no managed database, no dedicated IPv4, and no extra Machines or regions. The Docker image contains app code only; the SQLite database and int8 vector index are uploaded to the mounted volume.
 
-The 3M target is still designed for the same budget class. It should keep the same single-Machine, local-file shape and may resize storage from 2GB to 4GB if the full index and SQLite lookup tables no longer fit. This is a small volume-size change, not a move to a managed database or managed vector store.
+The 3M target keeps the same single-Machine, local-file shape with a 4GB volume.
+This is a small volume-size change, not a move to a managed database or managed
+vector store.
 
 Cost guardrails:
 
@@ -284,9 +297,13 @@ Cost guardrails:
 - Do not create managed Postgres, Redis, Tigris, GPUs, extra Machines, or extra regions without explicit approval.
 - Check Fly billing before and after deploy sessions.
 
-Operational observations from the 1M proof:
+Operational observations:
 
-- The deployed status endpoint reports 1,000,000 active and indexed papers with last OAI datestamp `2016-01-27`.
+- The deployed status endpoint reports 3,000,000 active and indexed papers with
+  last OAI datestamp `2026-04-23`.
+- The deployed SQLite database needs `idx_papers_status_count` on
+  `(active, vector_id)` so `/api/status` avoids slow table scans on the Fly
+  volume.
 - A concurrent cold-start recommendation pair completed successfully in about 22.6 seconds.
 - A concurrent warm recommendation pair completed successfully in about 1.3 seconds.
 - These measurements are for the 1M int8 NumPy full-scan path, not FAISS or

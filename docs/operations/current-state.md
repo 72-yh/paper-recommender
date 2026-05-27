@@ -1,6 +1,6 @@
 # Current Operational State
 
-Last updated: 2026-05-26
+Last updated: 2026-05-27
 
 ## Deployment
 
@@ -8,7 +8,7 @@ Last updated: 2026-05-26
 - URL: `https://paper-recommender-72yh.fly.dev/`
 - Region: `sjc`
 - Machine: `2872010f093248`, `shared-cpu-1x`, 1GB RAM
-- Volume: `paper_recommender_data`, 2GB
+- Volume: `paper_recommender_data`, 4GB
 - Public networking: shared IPv4 plus dedicated IPv6
 - Idle policy: `min_machines_running = 0`, auto-start enabled, Machine stopped after verification when practical
 
@@ -16,34 +16,31 @@ No managed database, Redis, object store, GPU, extra Machine, extra region, or d
 
 ## Data
 
-- Current deployment artifact: 1M proof index, not the full current arXiv corpus
-- Current local catch-up artifact: 3,000,000 indexed papers after real OAI
-  catch-up from `2016-01-27` to `2026-04-23`
-- SQLite database: `paper_recommender_1m.db`, about 1.28GB locally after the 3M
-  catch-up and `paper_categories` lookup growth
-- Vector index: `vectors_1m_int8_mmap/`, 1,188,002,048 bytes after 3M conversion
+- Current deployment artifact: 3,000,000 indexed papers after real OAI catch-up
+  from `2016-01-27` to `2026-04-23`
+- SQLite database: `paper_recommender_1m.db`, about 1.3GB on the Fly volume after
+  the 3M catch-up, `paper_categories` lookup growth, and status count index
+- Vector index: `vectors_1m_int8_mmap/`, about 1.2GB on the Fly volume after 3M
+  conversion
 - Category lookup: `paper_categories`, a derived SQLite table for active indexed paper categories
-- Status endpoint after deployment: 1,000,000 active papers and 1,000,000 indexed papers
-- Last OAI datestamp in the 1M proof: `2016-01-27`
-
-The deployed Fly app still serves the 1M proof until the 3M local artifacts are
-uploaded to a larger reviewed volume.
+- Status endpoint after deployment: 3,000,000 active papers and 3,000,000 indexed papers
+- Last OAI datestamp in deployment: `2026-04-23`
 
 ## 3M Budget Path
 
 The full-corpus target remains the same low-cost architecture: one small Fly Machine, local SQLite, local int8 mmap vectors, no managed database, and no managed vector service.
 
-The current 2GB volume is too small for the 3M local artifact. The latest local
-preflight measured the completed 3M artifact set at 2,469,075,200 bytes. The
-expected next storage step is therefore a 4GB volume, not a new paid service. At
-the current Fly volume price of `$0.15/GB/month`, moving from 2GB to 4GB would
-add about `$0.30/month`.
+The completed 3M artifact set required moving the Fly volume from 2GB to 4GB.
+The latest local preflight measured the 3M artifact set at 2,469,075,200 bytes;
+after adding the deployed status count index, the Fly volume reports about 2.4GB
+used and about 1.4GB available. This kept the architecture to one volume and one
+small Machine instead of adding a managed database or managed vector service.
 
 Keeping `min_machines_running = 0` remains the main compute cost guardrail. If the 1GB `shared-cpu-1x` Machine were left running for a full month in the current region, the listed monthly compute price is still below the user budget, but the operational target is lower than always-on usage because expected traffic is about 100 users and the app can auto-stop.
 
 ## Search Path
 
-The current serving path is a 1M int8 NumPy index loaded from the `int8_mmap` directory format. FAISS and USearch are not currently deployed.
+The current serving path is a 3M int8 NumPy index loaded from the `int8_mmap` directory format. FAISS and USearch are not currently deployed.
 
 This means:
 
@@ -105,13 +102,26 @@ Use it to grow from 1M in measured chunks while preserving OAI datestamp order.
   `last_oai_datestamp=2026-04-23` and `index_kind=int8_mmap`, `/` returned 200,
   and `/api/recommend` for `0704.0004` with categories `cs.CL + cs.LG` returned
   10 results.
+- Production 3M deployment: the Fly volume was extended to 4GB, the 3M SQLite
+  database and `int8_mmap` index were uploaded by chunked archive transfer, and
+  `scripts/smoke_deployment.py --timeout-seconds 180` passed with
+  `indexed_papers=3000000`, `index_kind=int8_mmap`,
+  `last_oai_datestamp=2026-04-23`, and 3 returned results for `0704.0004`.
+- Production 3M status count fix: adding `idx_papers_status_count` on
+  `(active, vector_id)` reduced remote status count queries from about 60-80s to
+  about 0.13-0.16s each.
+- Production 3M recommendation timing on `shared-cpu-1x`, 1GB RAM: a filtered
+  recommendation for `0704.0004` with `cs.CL + cs.LG` returned 10 results in
+  60.56s after the index was already loaded; an unfiltered recommendation
+  returned 10 results in 69.07s, so current latency is about 60-70s. This confirms that 3M exact scan on the
+  cheapest Fly runtime is correct but too slow for a polished user experience.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 
 ## Known Limits
 
-- The deployed proof covers 1M papers up to OAI datestamp `2016-01-27`; the
-  local 3M artifact is ready for smoke testing but is not deployed yet.
+- The deployed app now covers 3M papers up to OAI datestamp `2026-04-23`, but
+  recommendation latency is too high on the current 1GB `shared-cpu-1x` runtime.
 - The web UI always requests 10 recommendations and does not expose a Top K control.
 - The web UI exposes a searchable multi-select category filter. Production `/api/categories` returned 168 categories in 2.032s on first call after the deployment, and multi-category recommendation filtering returned HTTP 200.
 - First request after an idle stop can be slow.
@@ -123,6 +133,7 @@ The cold-start number includes Machine auto-start and first index load. Warm rec
 
 ## Next Step
 
-Keep the 1M `int8_mmap` path as the deployed default until a Fly 4GB volume
-change is explicitly approved and the 3M artifacts are uploaded and smoke tested
-on Fly.
+Keep the 3M `int8_mmap` deployment as the correctness baseline. The next
+engineering decision is performance: either benchmark a slightly larger runtime
+that can cache the 1.2GB mmap index, or build a compact ANN serving index that
+fits the same 4GB storage budget with acceptable recall.

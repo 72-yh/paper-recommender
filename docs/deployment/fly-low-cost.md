@@ -9,7 +9,7 @@ volume, and no managed services.
 - Use exactly one `shared-cpu-1x` Machine with 1GB RAM.
 - Keep `min_machines_running = 0` and `auto_stop_machines = "stop"` so the
   Machine can stop when idle.
-- Use one 2GB volume named `paper_recommender_data`.
+- Use one 4GB volume named `paper_recommender_data`.
 - Do not run `fly ips allocate-v4`; the shared IPv4 and Anycast IPv6 addresses
   are enough for this MVP.
 - Do not enable metrics-based autoscaling.
@@ -30,7 +30,7 @@ The Docker image contains only app code. The serving artifacts stay outside the
 image and are uploaded to the Fly volume:
 
 - `data/paper_recommender_1m.db`
-- `data/vectors_1m_int8.npz`
+- `data/vectors_1m_int8_mmap/`
 
 For the no-new-resource load optimization, convert the int8 index locally to
 `data/vectors_1m_int8_mmap/` and upload that directory instead. Set
@@ -43,11 +43,9 @@ evaluation shows that it fits the reviewed volume budget and preserves recall.
 The first local 50k USearch f16 candidate was fast but projected to about
 2.75GB for 3M vectors by itself, before SQLite and the existing int8 mmap files.
 
-Current local 1M artifact sizes are about 807 MB total after `paper_categories`
-backfill, so a 2GB volume is enough for the 1M proof deployment. The latest
-3M projection is about 2.42 GB, so a full-corpus upload should use a 4GB volume
-unless a fresh preflight says otherwise. A larger backfill requires an explicit
-volume-size review before upload.
+The deployed 3M artifact uses about 2.4GB on the Fly volume after the SQLite
+status count index is added, so the current reviewed size is 4GB. A larger
+backfill requires an explicit volume-size review before upload.
 
 Before any larger upload, run:
 
@@ -56,7 +54,7 @@ Before any larger upload, run:
   --db-path data\paper_recommender_1m.db `
   --index-path data\vectors_1m_int8_mmap `
   --index-kind int8_mmap `
-  --min-indexed-papers 1000000 `
+  --min-indexed-papers 3000000 `
   --target-indexed-papers 3000000 `
   --max-volume-gb 4
 ```
@@ -114,7 +112,7 @@ availability.
 
 ```powershell
 fly apps create paper-recommender-72yh
-fly volumes create paper_recommender_data --app paper-recommender-72yh --region sjc --size 2
+fly volumes create paper_recommender_data --app paper-recommender-72yh --region sjc --size 4
 fly deploy --app paper-recommender-72yh --ha=false --local-only
 ```
 
@@ -132,7 +130,6 @@ Upload the artifacts into the mounted `/app/data` volume:
 
 ```powershell
 fly sftp put data/paper_recommender_1m.db /app/data/paper_recommender_1m.db --app paper-recommender-72yh
-fly sftp put data/vectors_1m_int8.npz /app/data/vectors_1m_int8.npz --app paper-recommender-72yh
 ```
 
 Optional mmap int8 upload after local conversion:
@@ -161,6 +158,31 @@ deployment, the database upload completed, the vector upload needed a retry, and
 a lightweight `/health` keepalive helped keep the Machine available during the
 second upload.
 
+For the 3M upload, direct SFTP of a 1.28GB SQLite file was not reliable enough.
+The working chunked archive transfer path was:
+
+1. Create a local compressed archive containing `paper_recommender_1m.db` and
+   `vectors_1m_int8_mmap/`.
+2. Split the archive into 64MB chunks.
+3. Upload chunks to `/app/data/upload_3m_chunks/`.
+4. Verify `wc -c /app/data/upload_3m_chunks/part_*` matches the local archive
+   size.
+5. Stop the keepalive, restart the Machine to release old file handles, remove
+   the old 1M artifacts, then stream extract without creating another archive
+   copy on the volume:
+
+```sh
+cat /app/data/upload_3m_chunks/part_* | tar -xzf - -C /app/data
+```
+
+6. Remove `/app/data/upload_3m_chunks/` after extraction.
+7. Add the deployed SQLite status index if the uploaded database does not
+   already have it:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_papers_status_count ON papers(active, vector_id);
+```
+
 ## Verification
 
 Use the deployment smoke test against the Fly URL:
@@ -169,8 +191,9 @@ Use the deployment smoke test against the Fly URL:
 .\.venv\Scripts\python.exe scripts\smoke_deployment.py `
   --base-url https://paper-recommender-72yh.fly.dev `
   --query-url https://arxiv.org/abs/0704.0004 `
-  --expected-index-kind int8 `
-  --min-indexed-papers 1000000
+  --expected-index-kind int8_mmap `
+  --min-indexed-papers 3000000 `
+  --timeout-seconds 180
 ```
 
 Then check billing again:
@@ -180,9 +203,12 @@ fly dashboard --app paper-recommender-72yh
 ```
 
 The first recommendation requests can load the index from the mounted volume.
-For the 1M int8 proof, this is a 340MB file, so a cold request can take much
-longer than a warm request. The app protects the first load with an index-load
-lock, and the UI disables duplicate submits while a search is running.
+For the 3M `int8_mmap` deployment, exact scan is correct but slow on the current
+1GB `shared-cpu-1x` Machine: measured filtered and unfiltered requests were about
+60-70s. The app protects the first load with an index-load lock, and the UI
+disables duplicate submits while a search is running. Treat this deployment as a
+correctness baseline; a production-quality UX needs either a runtime/cache
+benchmark or a compact ANN index that stays inside the reviewed storage budget.
 
 ## Cleanup
 

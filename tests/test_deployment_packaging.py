@@ -107,7 +107,7 @@ def test_fly_config_uses_low_cost_single_machine() -> None:
     mount = config["mounts"][0]
     assert mount["source"] == "paper_recommender_data"
     assert mount["destination"] == "/app/data"
-    assert mount["initial_size"] == "2GB"
+    assert mount["initial_size"] == "4GB"
     assert mount["scheduled_snapshots"] is False
 
 

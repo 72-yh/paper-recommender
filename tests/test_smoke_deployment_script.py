@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from scripts.smoke_deployment import DeploymentSmokeError, smoke_deployment
+from scripts.smoke_deployment import DeploymentSmokeError, http_get_json, smoke_deployment
 
 
 def test_smoke_deployment_checks_health_status_and_recommendation() -> None:
@@ -117,6 +117,29 @@ def test_smoke_deployment_rejects_empty_recommendations() -> None:
             http_get=http_get,
             http_post=lambda _url, _payload: {"results": []},
         )
+
+
+def test_http_get_json_uses_requested_timeout(monkeypatch) -> None:
+    calls: list[int] = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, _exc_type, _exc, _traceback) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"status":"ok"}'
+
+    def fake_urlopen(_request, timeout: int):
+        calls.append(timeout)
+        return FakeResponse()
+
+    monkeypatch.setattr("scripts.smoke_deployment.urlopen", fake_urlopen)
+
+    assert http_get_json("http://example.test", timeout_seconds=123) == {"status": "ok"}
+    assert calls == [123]
 
 
 def test_smoke_deployment_cli_help_loads() -> None:

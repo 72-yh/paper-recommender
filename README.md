@@ -117,9 +117,9 @@ Validate the mounted artifacts before starting or shipping the container:
 ```powershell
 .\.venv\Scripts\python.exe scripts\preflight_artifacts.py `
   --db-path data/paper_recommender_1m.db `
-  --index-path data/vectors_1m_int8.npz `
-  --index-kind int8 `
-  --min-indexed-papers 1000000
+  --index-path data/vectors_1m_int8_mmap `
+  --index-kind int8_mmap `
+  --min-indexed-papers 3000000
 ```
 
 The preflight check verifies the DB and index files, index format, row counts,
@@ -131,8 +131,9 @@ Smoke-test a running deployment:
 .\.venv\Scripts\python.exe scripts\smoke_deployment.py `
   --base-url http://127.0.0.1:8000 `
   --query-url https://arxiv.org/abs/0704.0004 `
-  --expected-index-kind int8 `
-  --min-indexed-papers 1000000
+  --expected-index-kind int8_mmap `
+  --min-indexed-papers 3000000 `
+  --timeout-seconds 180
 ```
 
 The smoke test checks `/health`, `/api/status`, and one recommendation request.
@@ -158,8 +159,8 @@ PAPER_RECOMMENDER_INDEX_KIND=int8_mmap
 
 For a low-cost server, copy or attach the DB plus the selected vector artifact to
 the same paths, then run the same image. Do not bake the DB or vector index into
-the image; the current 1M int8 index is about 340 MB and will be replaced as the
-backfill grows.
+the image; the current deployed 3M `int8_mmap` artifact is about 1.2GB and is
+served from the mounted volume.
 
 Daily serving-index sync after a full current backfill:
 
@@ -173,14 +174,13 @@ Daily serving-index sync after a full current backfill:
   --checkpoint-every-records 10000 `
   --db-path data/paper_recommender_1m.db `
   --exact-index-path data/vectors_1m.npz `
-  --serving-index-path data/vectors_1m_int8.npz `
-  --compression-method int8 `
+  --serving-index-path data/vectors_1m_int8_mmap `
+  --serving-index-kind int8_mmap `
   --top-k 10 `
   --sample-size 1000 `
-  --label daily-1m-int8-r10
+  --label daily-int8-mmap
 ```
 
 Use this command only after the exact index has been backfilled to the current
-OAI datestamp. The 1M proof index currently stops at an older datestamp, so
-running the daily sync without date limits would continue the historical
-backfill rather than only process one day of changes.
+OAI datestamp. The deployed 3M artifact currently stops at OAI datestamp
+`2026-04-23`, so a daily sync resumes from that cursor.

@@ -78,6 +78,9 @@
 - [x] Package static UI assets so `/` works after deployment.
 - [x] Deploy the 1M proof artifacts to `https://paper-recommender-72yh.fly.dev/`.
 - [x] Verify `/api/status` reports 1,000,000 active and indexed papers with `index_kind=int8`.
+- [x] Extend the Fly volume to 4GB, deploy the 3M artifacts, and verify
+  `/api/status` reports 3,000,000 active and indexed papers with
+  `index_kind=int8_mmap`.
 
 ### Task 7: Current Serving Performance Baseline
 
@@ -86,6 +89,7 @@
 - Test: `tests/test_documentation.py`
 
 - [x] Record the current deployed serving path as 1M int8 NumPy full-scan.
+- [x] Record the updated deployed serving path as 3M int8 mmap NumPy full-scan.
 - [x] Record that FAISS is not currently deployed.
 - [x] Record the cold-start recommendation behavior after Machine auto-start.
 - [x] Record the warm recommendation behavior after the index has loaded.
@@ -157,3 +161,24 @@ category lookup rows `5172784`, and `max_volume_gb=4.0`.
 **3M local API smoke:** FastAPI `TestClient` returned 200 for `/health`, 200 for
 `/`, 3,000,000 active/indexed papers from `/api/status`, and 10 recommendations
 for `0704.0004` with categories `cs.CL + cs.LG`.
+
+### Task 11: 3M Fly Deployment Baseline
+
+**Status:** Completed.
+
+**Goal:** Put the completed 3M artifact on the reviewed low-cost Fly deployment
+without adding managed services.
+
+- [x] Extend `paper_recommender_data` from 2GB to 4GB after explicit review.
+- [x] Upload the 3M SQLite database and `int8_mmap` artifact by chunked archive
+  transfer after direct SFTP proved unreliable for the 1.28GB DB file.
+- [x] Add `idx_papers_status_count` on `(active, vector_id)` so `/api/status`
+  avoids slow full-table scans on the Fly volume.
+- [x] Run deployment smoke with `--timeout-seconds 180`.
+- [x] Record that 3M exact-scan recommendation latency on the current
+  `shared-cpu-1x`, 1GB RAM runtime is about 60-70s and needs a performance
+  follow-up before this is a polished UX.
+
+**3M Fly smoke:** `scripts/smoke_deployment.py --timeout-seconds 180` returned
+`indexed_papers=3000000`, `index_kind=int8_mmap`,
+`last_oai_datestamp=2026-04-23`, and 3 results for `0704.0004`.

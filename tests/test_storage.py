@@ -72,6 +72,24 @@ def test_upsert_paper_maintains_indexed_category_lookup() -> None:
     assert list_active_category_counts(conn) == [("cs.CL", 1), ("cs.LG", 1)]
 
 
+def test_init_db_indexes_status_counts() -> None:
+    conn = connect_db(":memory:")
+    init_db(conn)
+
+    active_plan = conn.execute(
+        "EXPLAIN QUERY PLAN SELECT COUNT(*) FROM papers WHERE active = 1"
+    ).fetchall()
+    indexed_plan = conn.execute(
+        """
+        EXPLAIN QUERY PLAN
+        SELECT COUNT(*) FROM papers WHERE active = 1 AND vector_id IS NOT NULL
+        """
+    ).fetchall()
+
+    assert any("idx_papers_status_count" in row["detail"] for row in active_plan)
+    assert any("idx_papers_status_count" in row["detail"] for row in indexed_plan)
+
+
 def test_set_paper_vector_id_adds_deferred_category_lookup_rows() -> None:
     conn = connect_db(":memory:")
     init_db(conn)

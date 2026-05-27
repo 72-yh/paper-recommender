@@ -24,6 +24,8 @@ def test_design_doc_reflects_current_mvp_decisions() -> None:
     assert "Use `--target-vector-count` during catch-up backfills" in design
     assert "paper_categories" in design
     assert "4GB volume" in design
+    assert "3,000,000 indexed papers" in design
+    assert "idx_papers_status_count" in design
 
 
 def test_real_oai_plan_tracks_current_followup_tasks() -> None:
@@ -40,6 +42,8 @@ def test_real_oai_plan_tracks_current_followup_tasks() -> None:
     assert "Small catch-up result" in plan
     assert "3M catch-up result" in plan
     assert "3M local API smoke" in plan
+    assert "Task 11: 3M Fly Deployment Baseline" in plan
+    assert "3M Fly smoke" in plan
     assert "1,000,050" in plan
     assert "3,000,000" in plan
     assert "2469075200" in plan
@@ -63,6 +67,9 @@ def test_fly_runbook_documents_current_operational_lessons() -> None:
     assert "2,469,075,200 total artifact bytes" in runbook
     assert "Run daily OAI updates on a local build machine" in runbook
     assert "Machine may auto-stop during long SFTP uploads" in runbook
+    assert "chunked archive transfer" in runbook
+    assert "--timeout-seconds 180" in runbook
+    assert "idx_papers_status_count" in runbook
     assert "first recommendation requests can load the index" in runbook
 
 
@@ -88,7 +95,8 @@ def test_current_state_doc_records_faiss_and_latency_status() -> None:
     assert "int8_mmap" in current_state
     assert "prefilter candidate `vector_id`s" in current_state
     assert "3M Budget Path" in current_state
-    assert "$0.30/month" in current_state
-    assert "projected_total_artifact_bytes=2421475584" in current_state
+    assert "Production 3M deployment" in current_state
+    assert "idx_papers_status_count" in current_state
+    assert "about 60-70s" in current_state
     assert "Cold start" in current_state
     assert "Warm recommendation" in current_state

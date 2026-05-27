@@ -35,11 +35,14 @@ def smoke_deployment(
     top_k: int = 3,
     min_indexed_papers: int = 1,
     expected_index_kind: str | None = None,
+    timeout_seconds: int = 30,
     http_get: HttpGet | None = None,
     http_post: HttpPost | None = None,
 ) -> DeploymentSmokeSummary:
-    http_get = http_get or http_get_json
-    http_post = http_post or http_post_json
+    http_get = http_get or (lambda url: http_get_json(url, timeout_seconds=timeout_seconds))
+    http_post = http_post or (
+        lambda url, payload: http_post_json(url, payload, timeout_seconds=timeout_seconds)
+    )
     base_url = base_url.rstrip("/")
 
     health = http_get(_join_url(base_url, "/health"))
@@ -78,12 +81,12 @@ def smoke_deployment(
     )
 
 
-def http_get_json(url: str) -> JsonObject:
+def http_get_json(url: str, *, timeout_seconds: int = 30) -> JsonObject:
     request = Request(url, headers={"Accept": "application/json"})
-    return _request_json(request)
+    return _request_json(request, timeout_seconds=timeout_seconds)
 
 
-def http_post_json(url: str, payload: JsonObject) -> JsonObject:
+def http_post_json(url: str, payload: JsonObject, *, timeout_seconds: int = 30) -> JsonObject:
     body = json.dumps(payload).encode("utf-8")
     request = Request(
         url,
@@ -94,12 +97,12 @@ def http_post_json(url: str, payload: JsonObject) -> JsonObject:
         },
         method="POST",
     )
-    return _request_json(request)
+    return _request_json(request, timeout_seconds=timeout_seconds)
 
 
-def _request_json(request: Request) -> JsonObject:
+def _request_json(request: Request, *, timeout_seconds: int) -> JsonObject:
     try:
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=timeout_seconds) as response:
             data = response.read()
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
@@ -144,6 +147,7 @@ def main() -> None:
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument("--min-indexed-papers", type=int, default=1)
     parser.add_argument("--expected-index-kind")
+    parser.add_argument("--timeout-seconds", type=int, default=30)
     args = parser.parse_args()
 
     try:
@@ -153,6 +157,7 @@ def main() -> None:
             top_k=args.top_k,
             min_indexed_papers=args.min_indexed_papers,
             expected_index_kind=args.expected_index_kind,
+            timeout_seconds=args.timeout_seconds,
         )
     except DeploymentSmokeError as exc:
         print(f"Deployment smoke failed: {exc}", file=sys.stderr)
