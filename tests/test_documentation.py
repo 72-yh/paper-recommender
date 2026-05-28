@@ -21,6 +21,8 @@ def test_design_doc_reflects_current_mvp_decisions() -> None:
     assert "score only that filtered vector subset" in design
     assert "USearch has a local" in design
     assert "USearch i8 is smaller but currently loses too much recall" in design
+    assert "scripts/run_daily_update.py" in design
+    assert "daily wrapper should not call Fly commands automatically" in design
     assert "sync command should use `--serving-index-kind int8_mmap`" in design
     assert "Use `--target-vector-count` during catch-up backfills" in design
     assert "paper_categories" in design
@@ -51,6 +53,9 @@ def test_real_oai_plan_tracks_current_followup_tasks() -> None:
     assert "3M Fly smoke" in plan
     assert "Production clustered IVF result" in plan
     assert "Task 13: Filtered IVF Candidate Lookup" in plan
+    assert "Task 14: Daily Local Update Orchestration" in plan
+    assert "scripts/run_daily_update.py" in plan
+    assert "production mutations remain manual and reviewed" in plan
     assert "3702979208" in plan
     assert "0.572s" in plan
     assert "1.880s" in plan
@@ -70,8 +75,10 @@ def test_fly_runbook_documents_current_operational_lessons() -> None:
     assert "--max-volume-gb 4" in runbook
     assert "USearch and other ANN indexes are local evaluation candidates only" in runbook
     assert "Daily Local Sync" in runbook
-    assert "--serving-index-kind int8_mmap" in runbook
-    assert "--target-vector-count 1010000" in runbook
+    assert "scripts\\run_daily_update.py" in runbook
+    assert "--target-vector-count" in runbook
+    assert "does not" in runbook
+    assert "`fly sftp`, `fly deploy`" in runbook
     assert "first small catch-up smoke run used target 1,000,050" in runbook
     assert "local 3M catch-up later reached 3,000,000 indexed papers" in runbook
     assert "2,469,075,200 total artifact bytes" in runbook
@@ -97,7 +104,11 @@ def test_current_state_doc_records_faiss_and_latency_status() -> None:
     assert "Local USearch f16 ANN evaluation" in current_state
     assert "recall@10 0.9980" in current_state
     assert "USearch i8 is smaller" in current_state
-    assert "Daily OAI sync now has a matching `int8_mmap` output mode" in current_state
+    assert "Daily OAI update orchestration now has a local wrapper" in current_state
+    assert "scripts/run_daily_update.py" in current_state
+    assert "intentionally stops" in current_state
+    assert "Fly upload or deploy step" in current_state
+    assert "--serving-index-kind int8_mmap" in current_state
     assert "accepts `--target-vector-count`" in current_state
     assert "Local controlled catch-up smoke run" in current_state
     assert "1,000,050" in current_state

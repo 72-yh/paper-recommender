@@ -63,8 +63,13 @@ duplicate the compact int8 serving representation in cluster order so Fly reads
 mostly contiguous slices instead of scattered mmap rows. It does not introduce a
 managed vector database or float32 vector copy.
 
-Daily OAI sync now has a matching `int8_mmap` output mode. Local build machines
-can run `scripts/sync_serving_index.py --serving-index-kind int8_mmap` so
+Daily OAI update orchestration now has a local wrapper:
+`scripts/run_daily_update.py`. It runs OAI sync with `int8_mmap` output,
+rebuilds local `ivf_int8_mmap` cluster files only when vectors changed, and runs
+artifact preflight against the reviewed 3M/4GB budget. It intentionally stops
+before any Fly upload or deploy step so production mutations stay explicit.
+
+The lower-level sync script still accepts `--serving-index-kind int8_mmap` so
 new/modified/deleted OAI records rebuild the same serving artifact format that
 production already uses.
 
@@ -175,5 +180,6 @@ The cold-start number includes Machine auto-start and first index load. Warm rec
 
 ## Next Step
 
-Add automated daily sync/deploy operations now that unfiltered and category
-filtered 3M recommendations are usable on the current low-cost Fly Machine.
+Run the first reviewed daily local update after the next OAI window, inspect
+preflight output, then document the explicit upload/deploy procedure for changed
+artifacts.

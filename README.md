@@ -193,25 +193,29 @@ the image; the current deployed 3M `ivf_int8_mmap` artifact keeps the base
 `int8_mmap` vectors and adds clustered int8 mmap files for faster reads on the
 small Fly volume.
 
-Daily serving-index sync after a full current backfill:
+Daily local update after a full current backfill:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\sync_serving_index.py `
-  --device cpu `
+.\.venv\Scripts\python.exe scripts\run_daily_update.py `
+  --device cuda `
   --request-delay-seconds 3 `
   --fetch-retries 10 `
   --fetch-retry-delay-seconds 120 `
-  --embedding-batch-size 128 `
+  --embedding-batch-size 512 `
   --checkpoint-every-records 10000 `
   --db-path data/paper_recommender_1m.db `
   --exact-index-path data/vectors_1m.npz `
   --serving-index-path data/vectors_1m_int8_mmap `
-  --serving-index-kind int8_mmap `
-  --top-k 10 `
-  --sample-size 1000 `
-  --label daily-int8-mmap
+  --min-indexed-papers 3000000 `
+  --target-indexed-papers 3000000 `
+  --max-volume-gb 4
 ```
 
 Use this command only after the exact index has been backfilled to the current
-OAI datestamp. The deployed 3M artifact currently stops at OAI datestamp
-`2026-04-23`, so a daily sync resumes from that cursor.
+OAI datestamp. It runs OAI sync, rebuilds the `int8_mmap` serving artifact only
+when vectors changed, rebuilds the local `ivf_int8_mmap` cluster files when
+needed, and then runs artifact preflight against the reviewed 4GB budget. It
+does not upload artifacts to Fly or deploy code automatically; review the
+preflight result before any production upload. The deployed 3M artifact
+currently stops at OAI datestamp `2026-04-23`, so a daily sync resumes from that
+cursor.

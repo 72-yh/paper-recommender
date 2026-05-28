@@ -70,27 +70,30 @@ and estimates whether the target corpus fits the reviewed volume budget.
 
 Run daily OAI updates on a local build machine, not on the small Fly Machine.
 The sync resumes from `last_successful_oai_datestamp`, embeds only changed
-records, and rebuilds the serving artifact only when vectors changed:
+records, rebuilds the serving artifact only when vectors changed, rebuilds IVF
+cluster files only when needed, and runs artifact preflight:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\sync_serving_index.py `
+.\.venv\Scripts\python.exe scripts\run_daily_update.py `
   --db-path data\paper_recommender_1m.db `
   --exact-index-path data\vectors_1m.npz `
   --serving-index-path data\vectors_1m_int8_mmap `
-  --serving-index-kind int8_mmap `
-  --target-vector-count 1010000 `
   --device cuda `
   --embedding-batch-size 512 `
   --checkpoint-every-records 10000 `
-  --label daily-int8-mmap
+  --request-delay-seconds 3 `
+  --fetch-retries 10 `
+  --min-indexed-papers 3000000 `
+  --target-indexed-papers 3000000 `
+  --max-volume-gb 4
 ```
 
-Increase `--target-vector-count` in controlled steps, for example 1.01M, 1.1M,
-then larger windows after timing is known. After a successful local sync, rebuild
-the IVF cluster files and run artifact preflight before uploading the updated
-SQLite database and mmap directory to Fly. This keeps production cheap: the
-deployed app serves files and does not need GPU, background workers, or a
-managed vector database.
+Use `--target-vector-count` only for controlled catch-up backfills. After a
+successful local daily update, review the preflight output before uploading the
+updated SQLite database and mmap directory to Fly. The daily command does not
+run `fly sftp`, `fly deploy`, or any other production mutation automatically.
+This keeps production cheap: the deployed app serves files and does not need
+GPU, background workers, or a managed vector database.
 
 The first small catch-up smoke run used target 1,000,050, processed 987 OAI
 records from `2016-01-27`, embedded 50 new records on CUDA, and passed preflight
@@ -100,7 +103,8 @@ to `2026-04-23`, and passed preflight with 2,469,075,200 total artifact bytes
 before adding clustered IVF arrays. The clustered IVF preflight later measured
 3,702,979,208 total artifact bytes under the same 4GB review limit.
 
-After the 3M catch-up, build IVF cluster files:
+The daily wrapper runs the following IVF build automatically when vectors
+changed. Run it manually only when rebuilding IVF outside the daily flow:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\build_ivf_int8_index.py `

@@ -240,3 +240,19 @@ at 0.084s, cluster selection at 0.006s, and clustered slice scoring at 0.131s
 after the optimization. The local end-to-end filtered recommendation took
 0.572s. Production timing on `shared-cpu-1x`, 1GB RAM was 1.880s for the
 filtered request and 0.617s for the unfiltered request.
+
+### Task 14: Daily Local Update Orchestration
+
+**Status:** Completed.
+
+**Goal:** Make the daily OAI update path repeatable without letting a routine
+job mutate Fly production or increase costs automatically.
+
+- [x] Add `scripts/run_daily_update.py` to run OAI sync, rebuild `int8_mmap`
+  serving files when vectors changed, rebuild `ivf_int8_mmap` cluster files when
+  needed, and run artifact preflight.
+- [x] Keep Fly artifact upload and `fly deploy` outside the daily wrapper so
+  production mutations remain manual and reviewed.
+- [x] Document the daily command in README and the Fly low-cost runbook.
+- [x] Verify with focused daily-update tests, documentation tests, full pytest,
+  and ruff.

@@ -91,9 +91,13 @@ Daily incremental update:
 - Start from the last successful OAI `datestamp`.
 - Fetch new, modified, and deleted records.
 - Use OAI `datestamp` as the only incremental cursor.
-- Rebuild the serving artifact through `scripts/sync_serving_index.py` when
-  vectors changed. The current deployed artifact format is `int8_mmap`, so the
-  sync command should use `--serving-index-kind int8_mmap`.
+- Run `scripts/run_daily_update.py` on a local build machine. It rebuilds the
+  `int8_mmap` serving artifact when vectors changed, rebuilds local
+  `ivf_int8_mmap` cluster files when needed, and runs artifact preflight.
+- Keep production upload and deploy steps manual after preflight review. The
+  daily wrapper should not call Fly commands automatically.
+- The lower-level sync command should use `--serving-index-kind int8_mmap` when
+  it is run directly.
 - Use `--target-vector-count` during catch-up backfills so the corpus can grow
   in measured chunks instead of one long unbounded run.
 
@@ -417,3 +421,5 @@ These should be decided during future implementation planning:
 - The active documentation says when the current deployment is exact/NumPy full-scan and when FAISS or another ANN library has actually been introduced.
 - The daily sync path can rebuild the current `int8_mmap` serving artifact
   after OAI updates.
+- The daily update wrapper can rebuild IVF files and preflight artifacts without
+  automatically mutating Fly production.

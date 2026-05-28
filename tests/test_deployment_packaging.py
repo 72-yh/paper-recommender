@@ -78,6 +78,7 @@ def test_readme_documents_container_deployment() -> None:
     assert "Docker healthcheck" in readme
     assert "scripts\\preflight_artifacts.py" in readme
     assert "scripts\\smoke_deployment.py" in readme
+    assert "scripts\\run_daily_update.py" in readme
     assert "data/paper_recommender_1m.db" in readme
     assert "data/vectors_1m_int8.npz" in readme
     assert "scripts\\convert_int8_mmap.py" in readme
