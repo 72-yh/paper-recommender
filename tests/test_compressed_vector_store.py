@@ -7,6 +7,7 @@ from paper_recommender.compressed_vector_store import (
     MmapInt8VectorIndex,
     PcaFloatVectorIndex,
     PcaInt8VectorIndex,
+    _int8_search_cluster_slices,
     recall_at_k,
 )
 from paper_recommender.vector_store import ExactVectorIndex
@@ -241,6 +242,35 @@ def test_ivf_int8_mmap_uses_clustered_arrays_when_available(tmp_path) -> None:
     index.base_index.codes = FailingBaseCodes()
 
     assert [result.vector_id for result in index.search(exact.get(1), top_k=2)] == [1, 2]
+
+
+def test_clustered_slice_filter_avoids_repeated_isin(monkeypatch) -> None:
+    def fail_isin(*_args, **_kwargs):
+        raise AssertionError("candidate filtering should not use repeated np.isin calls")
+
+    monkeypatch.setattr("paper_recommender.compressed_vector_store.np.isin", fail_isin)
+
+    results = _int8_search_cluster_slices(
+        vector_ids=np.array([10, 20, 30, 40], dtype=np.int64),
+        codes=np.array(
+            [
+                [1, 0, 0],
+                [2, 0, 0],
+                [0, 2, 0],
+                [0, 0, 2],
+            ],
+            dtype=np.int8,
+        ),
+        scales=np.ones(3, dtype=np.float32),
+        row_norms=np.array([1.0, 2.0, 2.0, 2.0], dtype=np.float32),
+        cluster_offsets=np.array([0, 2, 4], dtype=np.int64),
+        query=np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        top_k=2,
+        clusters=np.array([0, 1], dtype=np.int64),
+        candidate_vector_ids=np.array([20, 30], dtype=np.int64),
+    )
+
+    assert [result.vector_id for result in results] == [20, 30]
 
 
 def test_pca_int8_rejects_invalid_dimensions() -> None:

@@ -72,8 +72,8 @@ Current MVP state:
   measured production recommendations were about 60-70s on `shared-cpu-1x`,
   1GB RAM. Clustered `ivf_int8_mmap` keeps recall@10 near the exact int8
   baseline and reduced an unfiltered production recommendation for `0704.0004`
-  to 0.572s. Filtered category search remains slower and is the next serving
-  optimization target.
+  to 0.572s. A follow-up candidate lookup optimization reduced the same query
+  filtered to `cs.CL + cs.LG` from 8.405s to 1.880s.
 
 ### OAI-PMH Ingestion
 

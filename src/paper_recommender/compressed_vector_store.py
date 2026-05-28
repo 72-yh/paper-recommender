@@ -15,6 +15,7 @@ from paper_recommender.vector_store import (
 
 _INT8_SEARCH_CHUNK_SIZE = 65_536
 _RECALL_BATCH_SIZE = 32
+_MAX_DENSE_CANDIDATE_LOOKUP_BYTES = 64 * 1024 * 1024
 
 
 class SearchableIndex(Protocol):
@@ -36,6 +37,41 @@ class _ClusteredInt8Arrays:
     codes: np.ndarray
     row_norms: np.ndarray
     offsets: np.ndarray
+
+
+@dataclass(frozen=True)
+class _CandidateIdFilter:
+    dense_lookup: np.ndarray | None
+    sorted_ids: np.ndarray
+
+    @classmethod
+    def from_ids(cls, candidate_ids: np.ndarray) -> _CandidateIdFilter:
+        ids = np.asarray(candidate_ids, dtype=np.int64)
+        if len(ids) == 0:
+            return cls(None, ids)
+        unique_ids = np.unique(ids)
+        max_id = int(unique_ids[-1])
+        min_id = int(unique_ids[0])
+        if min_id >= 0 and max_id < _MAX_DENSE_CANDIDATE_LOOKUP_BYTES:
+            dense_lookup = np.zeros(max_id + 1, dtype=bool)
+            dense_lookup[unique_ids] = True
+            return cls(dense_lookup, unique_ids)
+        return cls(None, unique_ids)
+
+    def contains(self, vector_ids: np.ndarray) -> np.ndarray:
+        ids = np.asarray(vector_ids, dtype=np.int64)
+        if self.dense_lookup is not None:
+            valid = (ids >= 0) & (ids < len(self.dense_lookup))
+            mask = np.zeros(len(ids), dtype=bool)
+            mask[valid] = self.dense_lookup[ids[valid]]
+            return mask
+        if len(self.sorted_ids) == 0:
+            return np.zeros(len(ids), dtype=bool)
+        positions = np.searchsorted(self.sorted_ids, ids)
+        valid = positions < len(self.sorted_ids)
+        mask = np.zeros(len(ids), dtype=bool)
+        mask[valid] = self.sorted_ids[positions[valid]] == ids[valid]
+        return mask
 
 
 class PcaFloatVectorIndex:
@@ -808,8 +844,10 @@ def _int8_search_cluster_slices(
 
     normalized_query = _normalize_vector(query)
     weighted_query = normalized_query * scales
-    candidate_ids = (
-        None if candidate_vector_ids is None else np.asarray(candidate_vector_ids, dtype=np.int64)
+    candidate_filter = (
+        None
+        if candidate_vector_ids is None
+        else _CandidateIdFilter.from_ids(np.asarray(candidate_vector_ids, dtype=np.int64))
     )
     score_parts: list[np.ndarray] = []
     id_parts: list[np.ndarray] = []
@@ -822,8 +860,8 @@ def _int8_search_cluster_slices(
         cluster_vector_ids = vector_ids[start:end]
         cluster_codes = codes[start:end]
         cluster_norms = row_norms[start:end]
-        if candidate_ids is not None:
-            mask = np.isin(cluster_vector_ids, candidate_ids)
+        if candidate_filter is not None:
+            mask = candidate_filter.contains(cluster_vector_ids)
             if not np.any(mask):
                 continue
             cluster_vector_ids = cluster_vector_ids[mask]

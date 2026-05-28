@@ -242,8 +242,9 @@ The 3M exact `int8_mmap` baseline was correct but slow on the current 1GB
 `shared-cpu-1x` Machine: measured filtered and unfiltered requests were about
 60-70s. The deployed clustered `ivf_int8_mmap` path reduced an unfiltered
 `0704.0004` production recommendation to 0.572s. The same query filtered to
-`cs.CL + cs.LG` took 8.405s, so category-filtered latency remains the next
-serving optimization target.
+`cs.CL + cs.LG` initially took 8.405s. After replacing repeated per-cluster
+candidate membership checks with a one-time candidate ID lookup, the filtered
+production request took 1.880s and the unfiltered request took 0.617s.
 
 ## Cleanup
 

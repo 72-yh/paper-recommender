@@ -218,3 +218,25 @@ and deployment smoke returned `indexed_papers=3000000`,
 Machine was 0.572s for an unfiltered `0704.0004` recommendation and 8.405s for
 the same query filtered to `cs.CL + cs.LG`. The Machine was stopped after
 verification.
+
+### Task 13: Filtered IVF Candidate Lookup
+
+**Status:** Completed.
+
+**Goal:** Reduce category-filtered recommendation latency without changing
+storage artifacts or adding services.
+
+- [x] Profile filtered recommendation phases on the local 3M artifact.
+- [x] Add a regression test proving clustered slice filtering does not repeat
+  `np.isin` over the full candidate ID list for each selected cluster.
+- [x] Replace repeated `np.isin` with a one-time candidate ID lookup used by
+  each clustered slice.
+- [x] Deploy the code-only optimization to Fly with `--local-only`.
+- [x] Smoke test production and stop the Fly Machine after verification.
+
+**Filtered lookup result:** For `0704.0004` with categories `cs.CL + cs.LG`,
+local profiling showed SQLite candidate lookup at 0.338s, candidate row mapping
+at 0.084s, cluster selection at 0.006s, and clustered slice scoring at 0.131s
+after the optimization. The local end-to-end filtered recommendation took
+0.572s. Production timing on `shared-cpu-1x`, 1GB RAM was 1.880s for the
+filtered request and 0.617s for the unfiltered request.

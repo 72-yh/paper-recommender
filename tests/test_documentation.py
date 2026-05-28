@@ -29,6 +29,7 @@ def test_design_doc_reflects_current_mvp_decisions() -> None:
     assert "idx_papers_status_count" in design
     assert "clustered int8 mmap" in design
     assert "0.572s" in design
+    assert "1.880s" in design
 
 
 def test_real_oai_plan_tracks_current_followup_tasks() -> None:
@@ -49,8 +50,10 @@ def test_real_oai_plan_tracks_current_followup_tasks() -> None:
     assert "Task 12: IVF int8_mmap Serving Index" in plan
     assert "3M Fly smoke" in plan
     assert "Production clustered IVF result" in plan
+    assert "Task 13: Filtered IVF Candidate Lookup" in plan
     assert "3702979208" in plan
     assert "0.572s" in plan
+    assert "1.880s" in plan
     assert "1,000,050" in plan
     assert "3,000,000" in plan
     assert "2469075200" in plan
@@ -82,6 +85,7 @@ def test_fly_runbook_documents_current_operational_lessons() -> None:
     assert "clustered_codes.npy" in runbook
     assert "3,702,979,208 total artifact bytes" in runbook
     assert "0.572s" in runbook
+    assert "1.880s" in runbook
     assert "first recommendation requests can load the index" in runbook
 
 
@@ -117,5 +121,7 @@ def test_current_state_doc_records_faiss_and_latency_status() -> None:
     assert "total_artifact_bytes=3702979208" in current_state
     assert "0.572s" in current_state
     assert "8.405s" in current_state
+    assert "1.880s" in current_state
+    assert "filtered IVF candidate lookup fix" in current_state
     assert "Cold start" in current_state
     assert "Warm recommendation" in current_state

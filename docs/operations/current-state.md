@@ -149,6 +149,13 @@ Use it to grow from 1M in measured chunks while preserving OAI datestamp order.
   recommendation for `0704.0004` returned 10 results in 0.572s; the same query
   with categories `cs.CL + cs.LG` returned 10 results in 8.405s. Filtered
   category search remains the next optimization target.
+- Production filtered IVF candidate lookup fix: replacing repeated per-cluster
+  `np.isin` checks with a one-time dense candidate ID lookup reduced the local
+  filtered cluster-slice phase from 7.265s to 0.131s for `0704.0004` with
+  `cs.CL + cs.LG`. End-to-end local filtered recommendation time was 0.572s.
+- Production timing after the filtered lookup fix: the same `0704.0004` query
+  with categories `cs.CL + cs.LG` returned 10 results in 1.880s, while the
+  unfiltered query returned 10 results in 0.617s.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 
@@ -162,12 +169,11 @@ The cold-start number includes Machine auto-start and first index load. Warm rec
 - USearch f16 is fast on a small local slice, but its artifact size projects to roughly 916MB per 1M vectors and about 2.75GB for 3M vectors before SQLite and the existing int8 mmap index. That likely breaks the current 4GB full-corpus storage target unless it replaces, rather than duplicates, another artifact and passes a stricter quality gate.
 - USearch i8 is smaller, projecting to roughly 1.6GB for 3M vectors, but the measured recall drop is too large to promote as the default path without more tuning.
 - IVF should be monitored on production traffic for insufficient-result cases
-  under very narrow filters, and category-filtered latency should be improved
-  next.
+  under very narrow filters.
 - Daily sync should run on a local build machine and upload reviewed artifacts;
   the Fly Machine should remain a low-cost file-serving API runtime.
 
 ## Next Step
 
-Optimize filtered category/date search now that the unfiltered 3M path is below
-one second on the current low-cost Fly Machine.
+Add automated daily sync/deploy operations now that unfiltered and category
+filtered 3M recommendations are usable on the current low-cost Fly Machine.
