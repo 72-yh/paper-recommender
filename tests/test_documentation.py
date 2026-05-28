@@ -23,6 +23,7 @@ def test_design_doc_reflects_current_mvp_decisions() -> None:
     assert "USearch i8 is smaller but currently loses too much recall" in design
     assert "scripts/run_daily_update.py" in design
     assert "daily wrapper should not call Fly commands automatically" in design
+    assert "do not rewrite the large exact vector index" in design
     assert "sync command should use `--serving-index-kind int8_mmap`" in design
     assert "Use `--target-vector-count` during catch-up backfills" in design
     assert "paper_categories" in design
@@ -56,6 +57,8 @@ def test_real_oai_plan_tracks_current_followup_tasks() -> None:
     assert "Task 14: Daily Local Update Orchestration" in plan
     assert "scripts/run_daily_update.py" in plan
     assert "production mutations remain manual and reviewed" in plan
+    assert "Daily smoke result" in plan
+    assert "`--max-records 50` processed 50 unchanged records" in plan
     assert "3702979208" in plan
     assert "0.572s" in plan
     assert "1.880s" in plan
@@ -134,5 +137,10 @@ def test_current_state_doc_records_faiss_and_latency_status() -> None:
     assert "8.405s" in current_state
     assert "1.880s" in current_state
     assert "filtered IVF candidate lookup fix" in current_state
+    assert "Local daily wrapper no-op check" in current_state
+    assert "Local daily OAI smoke run" in current_state
+    assert "processed 50 unchanged OAI records" in current_state
+    assert "do" in current_state
+    assert "not rewrite large vector artifacts" in current_state
     assert "Cold start" in current_state
     assert "Warm recommendation" in current_state

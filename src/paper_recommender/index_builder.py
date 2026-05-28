@@ -101,6 +101,7 @@ def build_index_from_oai(
         conn.close()
         return IndexBuildSummary(last_datestamp=last_datestamp, **stats)
     embedding_batch_size = max(1, embedding_batch_size)
+    index_dirty = False
 
     try:
         stop = False
@@ -130,7 +131,7 @@ def build_index_from_oai(
 
                 if decision == "deleted":
                     if old_vector_id is not None:
-                        items.pop(old_vector_id, None)
+                        index_dirty = items.pop(old_vector_id, None) is not None or index_dirty
                     continue
 
                 paper = get_paper(conn, record.arxiv_id)
@@ -159,12 +160,21 @@ def build_index_from_oai(
                     target_vector_count,
                 ):
                     if _flush_embeddings(embedder, items, pending_embeddings):
+                        index_dirty = True
                         conn.commit()
 
                 if _should_checkpoint(stats["records_seen"], checkpoint_every_records):
                     if _flush_embeddings(embedder, items, pending_embeddings):
+                        index_dirty = True
                         conn.commit()
-                    _write_checkpoint(conn, index_path, items, last_datestamp)
+                    _write_checkpoint(
+                        conn,
+                        index_path,
+                        items,
+                        last_datestamp,
+                        save_index=index_dirty,
+                    )
+                    index_dirty = False
                     stats["checkpoints_written"] += 1
 
                 if _target_vector_count_reached(items, target_vector_count):
@@ -173,10 +183,18 @@ def build_index_from_oai(
 
             if pending_embeddings:
                 if _flush_embeddings(embedder, items, pending_embeddings):
+                    index_dirty = True
                     conn.commit()
 
             if _should_checkpoint(stats["batches_seen"], checkpoint_every_batches):
-                _write_checkpoint(conn, index_path, items, last_datestamp)
+                _write_checkpoint(
+                    conn,
+                    index_path,
+                    items,
+                    last_datestamp,
+                    save_index=index_dirty,
+                )
+                index_dirty = False
                 stats["checkpoints_written"] += 1
 
             if _target_vector_count_reached(items, target_vector_count):
@@ -185,7 +203,7 @@ def build_index_from_oai(
             if stop:
                 break
 
-        _write_checkpoint(conn, index_path, items, last_datestamp)
+        _write_checkpoint(conn, index_path, items, last_datestamp, save_index=index_dirty)
     finally:
         conn.close()
 
@@ -236,8 +254,11 @@ def _write_checkpoint(
     index_path: Path,
     items: dict[int, np.ndarray],
     last_datestamp: str | None,
+    *,
+    save_index: bool = True,
 ) -> None:
-    ExactVectorIndex.from_items(items).save(index_path)
+    if save_index:
+        ExactVectorIndex.from_items(items).save(index_path)
     if last_datestamp is not None:
         set_pipeline_state(conn, "last_successful_oai_datestamp", last_datestamp)
 

@@ -96,6 +96,8 @@ Daily incremental update:
   `ivf_int8_mmap` cluster files when needed, and runs artifact preflight.
 - Keep production upload and deploy steps manual after preflight review. The
   daily wrapper should not call Fly commands automatically.
+- When OAI records only refresh metadata or datestamps without changing
+  embeddings, do not rewrite the large exact vector index or serving artifacts.
 - The lower-level sync command should use `--serving-index-kind int8_mmap` when
   it is run directly.
 - Use `--target-vector-count` during catch-up backfills so the corpus can grow

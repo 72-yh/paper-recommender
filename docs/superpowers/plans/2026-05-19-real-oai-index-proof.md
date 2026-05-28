@@ -253,6 +253,15 @@ job mutate Fly production or increase costs automatically.
   needed, and run artifact preflight.
 - [x] Keep Fly artifact upload and `fly deploy` outside the daily wrapper so
   production mutations remain manual and reviewed.
+- [x] Avoid rewriting the large exact vector index when daily OAI records only
+  refresh metadata/datestamps and do not change vectors.
 - [x] Document the daily command in README and the Fly low-cost runbook.
 - [x] Verify with focused daily-update tests, documentation tests, full pytest,
   and ruff.
+
+**Daily smoke result:** A local no-op wrapper run with
+`--target-vector-count 3000000` fetched no OAI records, rebuilt no artifacts,
+and passed preflight with `total_artifact_bytes=3702979208`. A real OAI smoke
+run with `--max-records 50` processed 50 unchanged records at datestamp
+`2026-04-23`, embedded 0 papers, deleted 0 papers, rebuilt no serving or IVF
+artifacts, and passed preflight with `total_artifact_bytes=3702983304`.

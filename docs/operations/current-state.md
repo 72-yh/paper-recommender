@@ -161,6 +161,16 @@ Use it to grow from 1M in measured chunks while preserving OAI datestamp order.
 - Production timing after the filtered lookup fix: the same `0704.0004` query
   with categories `cs.CL + cs.LG` returned 10 results in 1.880s, while the
   unfiltered query returned 10 results in 0.617s.
+- Local daily wrapper no-op check: running `scripts/run_daily_update.py` with
+  `--target-vector-count 3000000` fetched no OAI records, rebuilt no serving or
+  IVF artifacts, and passed preflight with 3,000,000 indexed papers,
+  `index_kind=ivf_int8_mmap`, and `total_artifact_bytes=3702979208`.
+- Local daily OAI smoke run: running the same wrapper with `--max-records 50`
+  processed 50 unchanged OAI records at datestamp `2026-04-23`, embedded 0
+  papers, deleted 0 papers, rebuilt no serving or IVF artifacts, and passed
+  preflight with `total_artifact_bytes=3702983304`. The exact vector and serving
+  artifact timestamps stayed unchanged, confirming unchanged daily records do
+  not rewrite large vector artifacts.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 

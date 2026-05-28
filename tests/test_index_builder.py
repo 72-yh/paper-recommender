@@ -210,6 +210,46 @@ def test_build_index_from_oai_rebuilds_without_stale_updated_vectors(tmp_path) -
     assert all(np.linalg.norm(index.get(vector_id)) > 0 for vector_id in active_vector_ids)
 
 
+def test_build_index_from_oai_skips_exact_index_save_for_unchanged_records(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors.npz"
+    build_index_from_oai(
+        endpoint="https://example.test/oai",
+        db_path=db_path,
+        index_path=index_path,
+        from_date="2024-01-01",
+        embedder=HashingTextEmbedder(dimensions=16),
+        fetch_text=lambda _url: _single_record_xml("2401.00001", "2024-01-01"),
+    )
+
+    def fail_save(*_args, **_kwargs):
+        raise AssertionError("unchanged records should not rewrite the exact vector index")
+
+    monkeypatch.setattr(ExactVectorIndex, "save", fail_save)
+
+    summary = build_index_from_oai(
+        endpoint="https://example.test/oai",
+        db_path=db_path,
+        index_path=index_path,
+        from_date="2024-01-02",
+        embedder=HashingTextEmbedder(dimensions=16),
+        fetch_text=lambda _url: _single_record_xml("2401.00001", "2024-01-02"),
+    )
+
+    conn = connect_db(db_path)
+    paper = get_paper(conn, "2401.00001")
+
+    assert summary.records_seen == 1
+    assert summary.unchanged == 1
+    assert summary.embedded == 0
+    assert paper is not None
+    assert paper.oai_datestamp == "2024-01-02"
+    assert get_pipeline_state(conn, "last_successful_oai_datestamp") == "2024-01-02"
+
+
 def test_build_index_from_oai_drops_existing_vectors_with_wrong_dimensions(tmp_path) -> None:
     db_path = tmp_path / "papers.db"
     index_path = tmp_path / "vectors.npz"
