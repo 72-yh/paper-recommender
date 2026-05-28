@@ -1,6 +1,6 @@
 # Current Operational State
 
-Last updated: 2026-05-27
+Last updated: 2026-05-28
 
 ## Deployment
 
@@ -20,8 +20,8 @@ No managed database, Redis, object store, GPU, extra Machine, extra region, or d
   from `2016-01-27` to `2026-04-23`
 - SQLite database: `paper_recommender_1m.db`, about 1.3GB on the Fly volume after
   the 3M catch-up, `paper_categories` lookup growth, and status count index
-- Vector index: `vectors_1m_int8_mmap/`, about 1.2GB on the Fly volume after 3M
-  conversion
+- Vector index: `vectors_1m_int8_mmap/`, about 2.38GB after adding clustered
+  IVF mmap arrays for 3M serving
 - Category lookup: `paper_categories`, a derived SQLite table for active indexed paper categories
 - Status endpoint after deployment: 3,000,000 active papers and 3,000,000 indexed papers
 - Last OAI datestamp in deployment: `2026-04-23`
@@ -31,27 +31,37 @@ No managed database, Redis, object store, GPU, extra Machine, extra region, or d
 The full-corpus target remains the same low-cost architecture: one small Fly Machine, local SQLite, local int8 mmap vectors, no managed database, and no managed vector service.
 
 The completed 3M artifact set required moving the Fly volume from 2GB to 4GB.
-The latest local preflight measured the 3M artifact set at 2,469,075,200 bytes;
-after adding the deployed status count index, the Fly volume reports about 2.4GB
-used and about 1.4GB available. This kept the architecture to one volume and one
-small Machine instead of adding a managed database or managed vector service.
+The latest local preflight measured the 3M clustered IVF artifact set at
+3,702,979,208 bytes including SQLite, base int8 mmap arrays, and clustered int8
+mmap arrays. This remains within the reviewed 4GB volume, but leaves much less
+headroom than the earlier exact-scan 2,469,075,200-byte artifact. Keep the next
+growth step under explicit volume review.
 
 Keeping `min_machines_running = 0` remains the main compute cost guardrail. If the 1GB `shared-cpu-1x` Machine were left running for a full month in the current region, the listed monthly compute price is still below the user budget, but the operational target is lower than always-on usage because expected traffic is about 100 users and the app can auto-stop.
 
 ## Search Path
 
-The current serving path is a 3M int8 NumPy index loaded from the `int8_mmap` directory format. FAISS and USearch are not currently deployed.
+The target serving path is a 3M `ivf_int8_mmap` index loaded from the same
+`int8_mmap` directory format plus small IVF cluster files. FAISS and USearch are not currently deployed.
 
 This means:
 
-- Recommendation quality is still based on exact cosine comparison over int8 vectors.
-- Unfiltered recommendations scan the local mmap `.npy` artifact set.
+- Recommendation quality is still based on int8 cosine re-ranking over candidate vectors.
+- Unfiltered recommendations search nearby IVF clusters instead of scanning all
+  3M vectors.
 - Category and date filters prefilter candidate `vector_id`s through indexed SQLite lookup tables, then score only that filtered vector subset.
-- ANN work remains a measured optional optimization, not a completed part of the MVP.
+- Category/date filters are intersected with nearby IVF clusters before int8
+  re-ranking.
 
 The `int8_mmap` format keeps int8 quantization and exact NumPy ranking
 behavior, but stores precomputed row norms and allows the large arrays to be
 memory-mapped instead of unpacked from one compressed file at process start.
+The `ivf_int8_mmap` path keeps those same vectors and adds `centroids.npy`,
+`cluster_ids.npy`, `cluster_offsets.npy`, `clustered_vector_ids.npy`,
+`clustered_codes.npy`, and `clustered_row_norms.npy`. The clustered arrays
+duplicate the compact int8 serving representation in cluster order so Fly reads
+mostly contiguous slices instead of scattered mmap rows. It does not introduce a
+managed vector database or float32 vector copy.
 
 Daily OAI sync now has a matching `int8_mmap` output mode. Local build machines
 can run `scripts/sync_serving_index.py --serving-index-kind int8_mmap` so
@@ -115,25 +125,49 @@ Use it to grow from 1M in measured chunks while preserving OAI datestamp order.
   60.56s after the index was already loaded; an unfiltered recommendation
   returned 10 results in 69.07s, so current latency is about 60-70s. This confirms that 3M exact scan on the
   cheapest Fly runtime is correct but too slow for a polished user experience.
+- Local 3M clustered IVF int8 build: `scripts/build_ivf_int8_index.py` built 512
+  clusters from a 100,000-vector training sample in 17.842s and wrote
+  1,194,791,304 bytes of IVF files, including the clustered int8 mmap arrays.
+- Local preflight after clustered IVF: active/indexed papers 3,000,000,
+  `db_bytes=1320185856`, `index_bytes=2382793352`,
+  `total_artifact_bytes=3702979208`, category lookup rows 5,172,784, and
+  `max_volume_gb=4.0`.
+- Local 3M IVF int8 evaluation with `nprobe=32`: recall@10 0.9920 across 50
+  sampled queries compared with exact `int8_mmap`; exact p50 1,401.497ms and
+  exact p95 1,592.079ms; clustered IVF p50 110.694ms and p95 128.606ms.
+- Local 3M serving benchmark with clustered `ivf_int8_mmap`, 5 queries: load
+  0.0106s, unfiltered p50 122.280ms, unfiltered p95 201.648ms, filtered
+  `cs.CL` p50 814.331ms, filtered p95 2,273.659ms.
+- Production clustered IVF deployment: generated the large clustered mmap arrays
+  directly on the Fly volume to avoid a slow 1.15GB SFTP upload, then deployed
+  with `fly deploy --ha=false --local-only`.
+- Production clustered IVF smoke: `scripts/smoke_deployment.py
+  --timeout-seconds 180` returned `indexed_papers=3000000`,
+  `index_kind=ivf_int8_mmap`, `last_oai_datestamp=2026-04-23`, and 3 returned
+  results for `0704.0004`.
+- Production clustered IVF timing on `shared-cpu-1x`, 1GB RAM: an unfiltered
+  recommendation for `0704.0004` returned 10 results in 0.572s; the same query
+  with categories `cs.CL + cs.LG` returned 10 results in 8.405s. Filtered
+  category search remains the next optimization target.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 
 ## Known Limits
 
-- The deployed app now covers 3M papers up to OAI datestamp `2026-04-23`, but
-  recommendation latency is too high on the current 1GB `shared-cpu-1x` runtime.
+- The deployed app covers 3M papers up to OAI datestamp `2026-04-23` and now
+  uses clustered `ivf_int8_mmap` in production.
 - The web UI always requests 10 recommendations and does not expose a Top K control.
 - The web UI exposes a searchable multi-select category filter. Production `/api/categories` returned 168 categories in 2.032s on first call after the deployment, and multi-category recommendation filtering returned HTTP 200.
 - First request after an idle stop can be slow.
 - USearch f16 is fast on a small local slice, but its artifact size projects to roughly 916MB per 1M vectors and about 2.75GB for 3M vectors before SQLite and the existing int8 mmap index. That likely breaks the current 4GB full-corpus storage target unless it replaces, rather than duplicates, another artifact and passes a stricter quality gate.
 - USearch i8 is smaller, projecting to roughly 1.6GB for 3M vectors, but the measured recall drop is too large to promote as the default path without more tuning.
-- FAISS, USearch, or another ANN index still needs memory usage measurement and a larger-corpus evaluation before replacement.
+- IVF should be monitored on production traffic for insufficient-result cases
+  under very narrow filters, and category-filtered latency should be improved
+  next.
 - Daily sync should run on a local build machine and upload reviewed artifacts;
   the Fly Machine should remain a low-cost file-serving API runtime.
 
 ## Next Step
 
-Keep the 3M `int8_mmap` deployment as the correctness baseline. The next
-engineering decision is performance: either benchmark a slightly larger runtime
-that can cache the 1.2GB mmap index, or build a compact ANN serving index that
-fits the same 4GB storage budget with acceptable recall.
+Optimize filtered category/date search now that the unfiltered 3M path is below
+one second on the current low-cost Fly Machine.

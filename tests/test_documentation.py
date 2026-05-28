@@ -16,6 +16,7 @@ def test_design_doc_reflects_current_mvp_decisions() -> None:
     assert "OR semantics" in design
     assert "Fly.io low-cost deployment" in design
     assert "FAISS and USearch are not deployed in the current MVP" in design
+    assert "ivf_int8_mmap" in design
     assert "NumPy full-scan" in design
     assert "score only that filtered vector subset" in design
     assert "USearch has a local" in design
@@ -26,6 +27,8 @@ def test_design_doc_reflects_current_mvp_decisions() -> None:
     assert "4GB volume" in design
     assert "3,000,000 indexed papers" in design
     assert "idx_papers_status_count" in design
+    assert "clustered int8 mmap" in design
+    assert "0.572s" in design
 
 
 def test_real_oai_plan_tracks_current_followup_tasks() -> None:
@@ -43,7 +46,11 @@ def test_real_oai_plan_tracks_current_followup_tasks() -> None:
     assert "3M catch-up result" in plan
     assert "3M local API smoke" in plan
     assert "Task 11: 3M Fly Deployment Baseline" in plan
+    assert "Task 12: IVF int8_mmap Serving Index" in plan
     assert "3M Fly smoke" in plan
+    assert "Production clustered IVF result" in plan
+    assert "3702979208" in plan
+    assert "0.572s" in plan
     assert "1,000,050" in plan
     assert "3,000,000" in plan
     assert "2469075200" in plan
@@ -70,6 +77,11 @@ def test_fly_runbook_documents_current_operational_lessons() -> None:
     assert "chunked archive transfer" in runbook
     assert "--timeout-seconds 180" in runbook
     assert "idx_papers_status_count" in runbook
+    assert "ivf_int8_mmap" in runbook
+    assert "build_ivf_int8_index.py" in runbook
+    assert "clustered_codes.npy" in runbook
+    assert "3,702,979,208 total artifact bytes" in runbook
+    assert "0.572s" in runbook
     assert "first recommendation requests can load the index" in runbook
 
 
@@ -97,6 +109,13 @@ def test_current_state_doc_records_faiss_and_latency_status() -> None:
     assert "3M Budget Path" in current_state
     assert "Production 3M deployment" in current_state
     assert "idx_papers_status_count" in current_state
-    assert "about 60-70s" in current_state
+    assert "Local 3M IVF int8 evaluation" in current_state
+    assert "recall@10 0.9920" in current_state
+    assert "ivf_int8_mmap" in current_state
+    assert "Production clustered IVF deployment" in current_state
+    assert "clustered_codes.npy" in current_state
+    assert "total_artifact_bytes=3702979208" in current_state
+    assert "0.572s" in current_state
+    assert "8.405s" in current_state
     assert "Cold start" in current_state
     assert "Warm recommendation" in current_state

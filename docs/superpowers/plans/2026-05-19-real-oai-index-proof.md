@@ -97,7 +97,7 @@
 
 ### Task 8: ANN Serving Index Evaluation
 
-**Status:** Started.
+**Status:** Completed.
 
 **Goal:** Replace the NumPy full-scan path only after measuring recall and latency against the current exact/int8 baseline.
 
@@ -182,3 +182,39 @@ without adding managed services.
 **3M Fly smoke:** `scripts/smoke_deployment.py --timeout-seconds 180` returned
 `indexed_papers=3000000`, `index_kind=int8_mmap`,
 `last_oai_datestamp=2026-04-23`, and 3 results for `0704.0004`.
+
+### Task 12: IVF int8_mmap Serving Index
+
+**Status:** Started.
+
+**Goal:** Reduce 3M recommendation latency without adding a managed vector
+database or storing a second full vector copy.
+
+- [x] Add `ivf_int8_mmap` serving support on top of the existing int8 mmap
+  arrays.
+- [x] Add `scripts/build_ivf_int8_index.py` to build `centroids.npy`,
+  `cluster_ids.npy`, and clustered int8 mmap arrays.
+- [x] Add `scripts/evaluate_ivf_int8_index.py` to compare IVF results against
+  exact `int8_mmap` search.
+- [x] Build 512 local IVF clusters on the 3M artifact.
+- [x] Measure local recall and latency.
+- [x] Upload/generate IVF cluster files on Fly and smoke test production.
+
+**Local 3M clustered IVF result:** Building 512 clusters from a 100,000-vector
+sample took 17.842s and wrote 1,194,791,304 bytes of IVF files, including the
+clustered int8 mmap arrays. Preflight passed with total artifact bytes
+`3702979208` under the reviewed 4GB volume. With `nprobe=32`, recall@10 was
+0.9920 across 50 sampled queries against exact `int8_mmap`; clustered IVF p50
+was 110.694ms and p95 was 128.606ms while exact p50 was 1,401.497ms. The
+5-query serving benchmark with clustered `ivf_int8_mmap` reported unfiltered p50
+122.280ms.
+
+**Production clustered IVF result:** The small IVF files were uploaded by SFTP
+and the large clustered mmap arrays were generated directly on the Fly volume to
+avoid a slow 1.15GB SFTP upload. `fly deploy --ha=false --local-only` succeeded,
+and deployment smoke returned `indexed_papers=3000000`,
+`index_kind=ivf_int8_mmap`, `last_oai_datestamp=2026-04-23`, and 3 results for
+`0704.0004`. Warm production timing on the current `shared-cpu-1x`, 1GB RAM
+Machine was 0.572s for an unfiltered `0704.0004` recommendation and 8.405s for
+the same query filtered to `cs.CL + cs.LG`. The Machine was stopped after
+verification.

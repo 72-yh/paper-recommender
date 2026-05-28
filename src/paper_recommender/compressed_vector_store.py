@@ -30,6 +30,14 @@ class RecallResult:
     recall: float
 
 
+@dataclass(frozen=True)
+class _ClusteredInt8Arrays:
+    vector_ids: np.ndarray
+    codes: np.ndarray
+    row_norms: np.ndarray
+    offsets: np.ndarray
+
+
 class PcaFloatVectorIndex:
     def __init__(
         self,
@@ -261,6 +269,199 @@ class MmapInt8VectorIndex:
     def _decode_rows(self, rows: list[int] | None) -> np.ndarray:
         codes = self.codes if rows is None else self.codes[rows]
         return np.asarray(codes, dtype=np.float32) * self.scales
+
+
+class IvfInt8VectorIndex:
+    def __init__(
+        self,
+        base_index: MmapInt8VectorIndex,
+        cluster_ids: np.ndarray,
+        centroids: np.ndarray,
+        *,
+        clustered_arrays: _ClusteredInt8Arrays | None = None,
+        nprobe: int = 32,
+        min_candidate_multiplier: int = 200,
+    ) -> None:
+        self.base_index = base_index
+        self.vector_ids = base_index.vector_ids
+        self.cluster_ids = _coerce_array(cluster_ids, np.uint16)
+        self.centroids = _normalize_matrix(centroids)
+        if len(self.cluster_ids) != len(self.vector_ids):
+            raise ValueError("cluster_ids length must match vector_ids length")
+        if self.centroids.ndim != 2 or self.centroids.shape[1] != self.base_index.codes.shape[1]:
+            raise ValueError("centroids must match vector dimensions")
+        if np.any(self.cluster_ids >= len(self.centroids)):
+            raise ValueError("cluster_ids contain values outside centroid range")
+        self.clustered_arrays = self._validate_clustered_arrays(clustered_arrays)
+        self.nprobe = max(1, min(int(nprobe), len(self.centroids)))
+        self.min_candidate_multiplier = max(1, int(min_candidate_multiplier))
+
+    @classmethod
+    def load(
+        cls,
+        path: str | Path,
+        *,
+        nprobe: int = 32,
+        min_candidate_multiplier: int = 200,
+    ) -> IvfInt8VectorIndex:
+        directory = Path(path)
+        return cls(
+            MmapInt8VectorIndex.load(directory),
+            np.load(directory / "cluster_ids.npy", mmap_mode="r"),
+            np.load(directory / "centroids.npy", mmap_mode="r"),
+            clustered_arrays=_load_clustered_int8_arrays(directory),
+            nprobe=nprobe,
+            min_candidate_multiplier=min_candidate_multiplier,
+        )
+
+    def get(self, vector_id: int) -> np.ndarray | None:
+        return self.base_index.get(vector_id)
+
+    def search(self, query: np.ndarray, top_k: int) -> list[VectorSearchResult]:
+        if top_k <= 0 or len(self.vector_ids) == 0:
+            return []
+
+        if self.clustered_arrays is not None:
+            clusters = self._candidate_clusters(query, top_k)
+            return _int8_search_cluster_slices(
+                self.clustered_arrays.vector_ids,
+                self.clustered_arrays.codes,
+                self.base_index.scales,
+                self.clustered_arrays.row_norms,
+                self.clustered_arrays.offsets,
+                query,
+                top_k,
+                clusters,
+            )
+
+        row_indices = self._candidate_rows(query, top_k)
+        return _int8_search_rows(
+            self.vector_ids,
+            self.base_index.codes,
+            self.base_index.scales,
+            self.base_index._row_norms,
+            query,
+            top_k,
+            row_indices,
+        )
+
+    def search_subset(
+        self,
+        query: np.ndarray,
+        top_k: int,
+        candidate_vector_ids: list[int] | tuple[int, ...] | np.ndarray,
+    ) -> list[VectorSearchResult]:
+        if top_k <= 0 or len(self.vector_ids) == 0:
+            return []
+
+        candidate_rows = candidate_row_indices(self.vector_ids, candidate_vector_ids)
+        if len(candidate_rows) == 0:
+            return []
+
+        if self.clustered_arrays is not None:
+            clusters = self._candidate_clusters(query, top_k, candidate_rows=candidate_rows)
+            return _int8_search_cluster_slices(
+                self.clustered_arrays.vector_ids,
+                self.clustered_arrays.codes,
+                self.base_index.scales,
+                self.clustered_arrays.row_norms,
+                self.clustered_arrays.offsets,
+                query,
+                top_k,
+                clusters,
+                candidate_vector_ids=self.vector_ids[candidate_rows],
+            )
+
+        row_indices = self._candidate_rows(query, top_k, candidate_rows=candidate_rows)
+        return _int8_search_rows(
+            self.vector_ids,
+            self.base_index.codes,
+            self.base_index.scales,
+            self.base_index._row_norms,
+            query,
+            top_k,
+            row_indices,
+        )
+
+    def _candidate_rows(
+        self,
+        query: np.ndarray,
+        top_k: int,
+        candidate_rows: np.ndarray | None = None,
+    ) -> np.ndarray:
+        selected_clusters = self._candidate_clusters(query, top_k, candidate_rows=candidate_rows)
+        source_rows = (
+            np.arange(len(self.vector_ids), dtype=np.int64)
+            if candidate_rows is None
+            else np.asarray(candidate_rows, dtype=np.int64)
+        )
+        return source_rows[np.isin(self.cluster_ids[source_rows], selected_clusters)]
+
+    def _candidate_clusters(
+        self,
+        query: np.ndarray,
+        top_k: int,
+        candidate_rows: np.ndarray | None = None,
+    ) -> np.ndarray:
+        cluster_order = self._cluster_order(query)
+        source_rows = (
+            np.arange(len(self.vector_ids), dtype=np.int64)
+            if candidate_rows is None
+            else np.asarray(candidate_rows, dtype=np.int64)
+        )
+        if len(source_rows) == 0:
+            return source_rows
+
+        min_candidates = min(
+            len(source_rows),
+            max(top_k, top_k * self.min_candidate_multiplier),
+        )
+        probe_count = self.nprobe
+        while True:
+            selected_clusters = cluster_order[:probe_count]
+            if candidate_rows is None and self.clustered_arrays is not None:
+                candidate_count = int(
+                    np.sum(
+                        self.clustered_arrays.offsets[selected_clusters + 1]
+                        - self.clustered_arrays.offsets[selected_clusters]
+                    )
+                )
+            else:
+                candidate_count = int(
+                    np.count_nonzero(np.isin(self.cluster_ids[source_rows], selected_clusters))
+                )
+            if candidate_count >= min_candidates or probe_count == len(cluster_order):
+                return selected_clusters
+            probe_count = min(len(cluster_order), probe_count * 2)
+
+    def _cluster_order(self, query: np.ndarray) -> np.ndarray:
+        normalized_query = _normalize_vector(query)
+        scores = self.centroids @ normalized_query
+        return top_k_indices(scores, len(scores))
+
+    def _validate_clustered_arrays(
+        self,
+        arrays: _ClusteredInt8Arrays | None,
+    ) -> _ClusteredInt8Arrays | None:
+        if arrays is None:
+            return None
+        vector_ids = _coerce_array(arrays.vector_ids, np.int64)
+        codes = _coerce_array(arrays.codes, np.int8)
+        row_norms = _coerce_array(arrays.row_norms, np.float32)
+        offsets = _coerce_array(arrays.offsets, np.int64)
+        if len(vector_ids) != len(self.vector_ids):
+            raise ValueError("clustered_vector_ids length must match vector_ids length")
+        if codes.shape != self.base_index.codes.shape:
+            raise ValueError("clustered_codes shape must match base codes shape")
+        if len(row_norms) != len(self.vector_ids):
+            raise ValueError("clustered_row_norms length must match vector_ids length")
+        if len(offsets) != len(self.centroids) + 1:
+            raise ValueError("cluster_offsets length must equal n_clusters + 1")
+        if offsets[0] != 0 or offsets[-1] != len(self.vector_ids):
+            raise ValueError("cluster_offsets must span every clustered row")
+        if np.any(np.diff(offsets) < 0):
+            raise ValueError("cluster_offsets must be non-decreasing")
+        return _ClusteredInt8Arrays(vector_ids, codes, row_norms, offsets)
 
 
 class PcaInt8VectorIndex:
@@ -495,6 +696,27 @@ def _save_int8_mmap_arrays(
     np.save(directory / "row_norms.npy", np.asarray(row_norms, dtype=np.float32))
 
 
+def _load_clustered_int8_arrays(directory: Path) -> _ClusteredInt8Arrays | None:
+    paths = {
+        "vector_ids": directory / "clustered_vector_ids.npy",
+        "codes": directory / "clustered_codes.npy",
+        "row_norms": directory / "clustered_row_norms.npy",
+        "offsets": directory / "cluster_offsets.npy",
+    }
+    existing = [path.exists() for path in paths.values()]
+    if not any(existing):
+        return None
+    if not all(existing):
+        missing = ", ".join(name for name, path in paths.items() if not path.exists())
+        raise ValueError(f"incomplete clustered IVF arrays: missing {missing}")
+    return _ClusteredInt8Arrays(
+        np.load(paths["vector_ids"], mmap_mode="r"),
+        np.load(paths["codes"], mmap_mode="r"),
+        np.load(paths["row_norms"], mmap_mode="r"),
+        np.load(paths["offsets"], mmap_mode="r"),
+    )
+
+
 def _decoded_int8_row_norms(codes: np.ndarray, scales: np.ndarray) -> np.ndarray:
     norms = np.zeros(len(codes), dtype=np.float32)
     scale_squares = np.square(scales, dtype=np.float32)
@@ -539,6 +761,21 @@ def _int8_search_subset(
     if len(row_indices) == 0:
         return []
 
+    return _int8_search_rows(vector_ids, codes, scales, row_norms, query, top_k, row_indices)
+
+
+def _int8_search_rows(
+    vector_ids: np.ndarray,
+    codes: np.ndarray,
+    scales: np.ndarray,
+    row_norms: np.ndarray,
+    query: np.ndarray,
+    top_k: int,
+    row_indices: np.ndarray,
+) -> list[VectorSearchResult]:
+    if top_k <= 0 or len(row_indices) == 0:
+        return []
+
     normalized_query = _normalize_vector(query)
     weighted_query = normalized_query * scales
     selected_codes = codes[row_indices]
@@ -548,6 +785,63 @@ def _int8_search_subset(
     return [
         VectorSearchResult(
             vector_id=int(vector_ids[row_indices[index]]),
+            score=float(scores[index]),
+        )
+        for index in ordered_indices
+    ]
+
+
+def _int8_search_cluster_slices(
+    vector_ids: np.ndarray,
+    codes: np.ndarray,
+    scales: np.ndarray,
+    row_norms: np.ndarray,
+    cluster_offsets: np.ndarray,
+    query: np.ndarray,
+    top_k: int,
+    clusters: np.ndarray,
+    *,
+    candidate_vector_ids: np.ndarray | None = None,
+) -> list[VectorSearchResult]:
+    if top_k <= 0 or len(clusters) == 0:
+        return []
+
+    normalized_query = _normalize_vector(query)
+    weighted_query = normalized_query * scales
+    candidate_ids = (
+        None if candidate_vector_ids is None else np.asarray(candidate_vector_ids, dtype=np.int64)
+    )
+    score_parts: list[np.ndarray] = []
+    id_parts: list[np.ndarray] = []
+    for cluster_id in clusters:
+        start = int(cluster_offsets[int(cluster_id)])
+        end = int(cluster_offsets[int(cluster_id) + 1])
+        if start == end:
+            continue
+
+        cluster_vector_ids = vector_ids[start:end]
+        cluster_codes = codes[start:end]
+        cluster_norms = row_norms[start:end]
+        if candidate_ids is not None:
+            mask = np.isin(cluster_vector_ids, candidate_ids)
+            if not np.any(mask):
+                continue
+            cluster_vector_ids = cluster_vector_ids[mask]
+            cluster_codes = cluster_codes[mask]
+            cluster_norms = cluster_norms[mask]
+
+        score_parts.append(_int8_cosine_scores(cluster_codes, weighted_query, cluster_norms))
+        id_parts.append(np.asarray(cluster_vector_ids, dtype=np.int64))
+
+    if not score_parts:
+        return []
+
+    scores = np.concatenate(score_parts)
+    result_vector_ids = np.concatenate(id_parts)
+    ordered_indices = top_k_indices(scores, top_k)
+    return [
+        VectorSearchResult(
+            vector_id=int(result_vector_ids[index]),
             score=float(scores[index]),
         )
         for index in ordered_indices

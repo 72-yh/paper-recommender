@@ -3,6 +3,7 @@ import pytest
 
 from paper_recommender.compressed_vector_store import (
     Int8VectorIndex,
+    IvfInt8VectorIndex,
     MmapInt8VectorIndex,
     PcaFloatVectorIndex,
     PcaInt8VectorIndex,
@@ -142,6 +143,104 @@ def test_int8_mmap_load_uses_saved_row_norms(monkeypatch, tmp_path) -> None:
     loaded = MmapInt8VectorIndex.load(path)
 
     assert np.array_equal(loaded._row_norms, index._row_norms)
+
+
+def test_ivf_int8_mmap_search_scores_only_selected_clusters(tmp_path) -> None:
+    path = tmp_path / "ivf_int8_mmap"
+    exact = _baseline_index()
+    Int8VectorIndex.from_exact_index(exact).save_mmap(path)
+    np.save(path / "cluster_ids.npy", np.array([0, 0, 1, 1], dtype=np.uint16))
+    np.save(
+        path / "centroids.npy",
+        np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float32,
+        ),
+    )
+
+    index = IvfInt8VectorIndex.load(path, nprobe=1, min_candidate_multiplier=1)
+
+    assert [result.vector_id for result in index.search(exact.get(1), top_k=2)] == [1, 2]
+
+
+def test_ivf_int8_mmap_search_subset_intersects_filter_and_clusters(tmp_path) -> None:
+    path = tmp_path / "ivf_int8_mmap"
+    exact = _baseline_index()
+    Int8VectorIndex.from_exact_index(exact).save_mmap(path)
+    np.save(path / "cluster_ids.npy", np.array([0, 0, 1, 1], dtype=np.uint16))
+    np.save(
+        path / "centroids.npy",
+        np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float32,
+        ),
+    )
+
+    index = IvfInt8VectorIndex.load(path, nprobe=1, min_candidate_multiplier=1)
+    results = index.search_subset(exact.get(1), top_k=1, candidate_vector_ids=[2, 3])
+
+    assert [result.vector_id for result in results] == [2]
+
+
+def test_ivf_int8_mmap_expands_probes_until_enough_candidates(tmp_path) -> None:
+    path = tmp_path / "ivf_int8_mmap"
+    exact = _baseline_index()
+    Int8VectorIndex.from_exact_index(exact).save_mmap(path)
+    np.save(path / "cluster_ids.npy", np.array([0, 1, 1, 1], dtype=np.uint16))
+    np.save(
+        path / "centroids.npy",
+        np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.9, 0.1, 0.0],
+            ],
+            dtype=np.float32,
+        ),
+    )
+
+    index = IvfInt8VectorIndex.load(path, nprobe=1, min_candidate_multiplier=1)
+
+    assert [result.vector_id for result in index.search(exact.get(1), top_k=2)] == [1, 2]
+
+
+def test_ivf_int8_mmap_uses_clustered_arrays_when_available(tmp_path) -> None:
+    path = tmp_path / "ivf_int8_mmap"
+    exact = _baseline_index()
+    int8 = Int8VectorIndex.from_exact_index(exact)
+    int8.save_mmap(path)
+    np.save(path / "cluster_ids.npy", np.array([0, 0, 1, 1], dtype=np.uint16))
+    np.save(path / "cluster_offsets.npy", np.array([0, 2, 4], dtype=np.int64))
+    np.save(path / "clustered_vector_ids.npy", int8.vector_ids)
+    np.save(path / "clustered_codes.npy", int8.codes)
+    np.save(path / "clustered_row_norms.npy", int8._row_norms)
+    np.save(
+        path / "centroids.npy",
+        np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float32,
+        ),
+    )
+
+    index = IvfInt8VectorIndex.load(path, nprobe=1, min_candidate_multiplier=1)
+
+    class FailingBaseCodes:
+        shape = index.base_index.codes.shape
+
+        def __getitem__(self, _rows):
+            raise AssertionError("clustered IVF search should not read scattered base rows")
+
+    index.base_index.codes = FailingBaseCodes()
+
+    assert [result.vector_id for result in index.search(exact.get(1), top_k=2)] == [1, 2]
 
 
 def test_pca_int8_rejects_invalid_dimensions() -> None:

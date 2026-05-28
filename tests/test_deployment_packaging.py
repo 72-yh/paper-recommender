@@ -81,7 +81,10 @@ def test_readme_documents_container_deployment() -> None:
     assert "data/paper_recommender_1m.db" in readme
     assert "data/vectors_1m_int8.npz" in readme
     assert "scripts\\convert_int8_mmap.py" in readme
+    assert "scripts\\build_ivf_int8_index.py" in readme
+    assert "scripts\\evaluate_ivf_int8_index.py" in readme
     assert "PAPER_RECOMMENDER_INDEX_KIND=int8_mmap" in readme
+    assert "PAPER_RECOMMENDER_INDEX_KIND=ivf_int8_mmap" in readme
     assert "Compose project name is fixed to `paper_recommender`" in readme
 
 
@@ -91,7 +94,7 @@ def test_fly_config_uses_low_cost_single_machine() -> None:
     assert config["app"].startswith("paper-recommender")
     assert "arxiv" not in config["app"]
     assert config["env"]["PAPER_RECOMMENDER_INDEX_PATH"] == "/app/data/vectors_1m_int8_mmap"
-    assert config["env"]["PAPER_RECOMMENDER_INDEX_KIND"] == "int8_mmap"
+    assert config["env"]["PAPER_RECOMMENDER_INDEX_KIND"] == "ivf_int8_mmap"
 
     service = config["http_service"]
     assert service["internal_port"] == 8000

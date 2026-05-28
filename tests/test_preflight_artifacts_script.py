@@ -53,6 +53,35 @@ def test_preflight_artifacts_accepts_matching_int8_mmap_db_and_index(tmp_path) -
     assert summary.dimensions == 3
 
 
+def test_preflight_artifacts_accepts_matching_ivf_int8_mmap_db_and_index(tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors_ivf_int8_mmap"
+    exact = _exact_index()
+    _write_db(db_path, vector_ids=(1, 2, 3))
+    int8 = Int8VectorIndex.from_exact_index(exact)
+    int8.save_mmap(index_path)
+    np.save(index_path / "cluster_ids.npy", np.array([0, 0, 1], dtype=np.uint16))
+    np.save(index_path / "cluster_offsets.npy", np.array([0, 2, 3], dtype=np.int64))
+    np.save(index_path / "clustered_vector_ids.npy", int8.vector_ids)
+    np.save(index_path / "clustered_codes.npy", int8.codes)
+    np.save(index_path / "clustered_row_norms.npy", int8._row_norms)
+    np.save(
+        index_path / "centroids.npy",
+        np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32),
+    )
+
+    summary = preflight_artifacts(
+        db_path=db_path,
+        index_path=index_path,
+        index_kind="ivf_int8_mmap",
+        min_indexed_papers=3,
+    )
+
+    assert summary.index_kind == "ivf_int8_mmap"
+    assert summary.index_vectors == 3
+    assert summary.dimensions == 3
+
+
 def test_preflight_artifacts_projects_target_corpus_storage(tmp_path) -> None:
     db_path = tmp_path / "papers.db"
     index_path = tmp_path / "vectors_int8.npz"

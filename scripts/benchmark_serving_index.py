@@ -6,7 +6,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from paper_recommender.compressed_vector_store import Int8VectorIndex, MmapInt8VectorIndex
+from paper_recommender.compressed_vector_store import (
+    Int8VectorIndex,
+    IvfInt8VectorIndex,
+    MmapInt8VectorIndex,
+)
 from paper_recommender.recommender import recommend
 from paper_recommender.storage import connect_db
 from paper_recommender.vector_store import ExactVectorIndex
@@ -105,6 +109,8 @@ def _load_index(index_path: Path, index_kind: str):
         return Int8VectorIndex.load(index_path)
     if index_kind == "int8_mmap":
         return MmapInt8VectorIndex.load(index_path)
+    if index_kind == "ivf_int8_mmap":
+        return IvfInt8VectorIndex.load(index_path)
     raise ValueError(f"Unsupported index kind: {index_kind}")
 
 
@@ -162,7 +168,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark Paper Recommender serving latency.")
     parser.add_argument("--db-path", type=Path, default=Path("data/paper_recommender_1m.db"))
     parser.add_argument("--index-path", type=Path, default=Path("data/vectors_1m_int8_mmap"))
-    parser.add_argument("--index-kind", choices=("exact", "int8", "int8_mmap"), default="int8_mmap")
+    parser.add_argument(
+        "--index-kind",
+        choices=("exact", "int8", "int8_mmap", "ivf_int8_mmap"),
+        default="int8_mmap",
+    )
     parser.add_argument("--query-count", type=int, default=20)
     parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument("--category", action="append", default=[])

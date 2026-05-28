@@ -3,6 +3,7 @@ import sys
 
 import numpy as np
 
+from paper_recommender.compressed_vector_store import Int8VectorIndex
 from paper_recommender.models import Paper
 from paper_recommender.storage import connect_db, init_db, upsert_paper
 from paper_recommender.vector_store import ExactVectorIndex
@@ -49,6 +50,30 @@ def test_benchmark_serving_index_can_measure_filtered_recommendations(tmp_path) 
     assert summary.filtered is not None
     assert summary.filtered.name == "filtered"
     assert summary.filtered.query_count == 2
+
+
+def test_benchmark_serving_index_can_load_ivf_int8_mmap(tmp_path) -> None:
+    db_path = tmp_path / "papers.db"
+    index_path = tmp_path / "vectors_ivf_int8_mmap"
+    _write_db(db_path)
+    exact = _exact_index()
+    Int8VectorIndex.from_exact_index(exact).save_mmap(index_path)
+    np.save(index_path / "cluster_ids.npy", np.array([0, 0, 1], dtype=np.uint16))
+    np.save(
+        index_path / "centroids.npy",
+        np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32),
+    )
+
+    summary = benchmark_serving_index(
+        db_path=db_path,
+        index_path=index_path,
+        index_kind="ivf_int8_mmap",
+        query_count=1,
+        top_k=1,
+    )
+
+    assert summary.index_kind == "ivf_int8_mmap"
+    assert summary.unfiltered.total_results == 1
 
 
 def test_sample_query_arxiv_ids_uses_active_indexed_papers(tmp_path) -> None:

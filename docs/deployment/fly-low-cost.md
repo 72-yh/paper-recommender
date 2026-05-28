@@ -33,9 +33,12 @@ image and are uploaded to the Fly volume:
 - `data/vectors_1m_int8_mmap/`
 
 For the no-new-resource load optimization, convert the int8 index locally to
-`data/vectors_1m_int8_mmap/` and upload that directory instead. Set
-`PAPER_RECOMMENDER_INDEX_KIND=int8_mmap` only after all four `.npy` files are on
-the volume.
+`data/vectors_1m_int8_mmap/` and upload that directory instead. The current
+serving target is `PAPER_RECOMMENDER_INDEX_KIND=ivf_int8_mmap`, which reuses
+those mmap arrays and adds IVF metadata plus clustered int8 mmap arrays:
+`centroids.npy`, `cluster_ids.npy`, `cluster_offsets.npy`,
+`clustered_vector_ids.npy`, `clustered_codes.npy`, and
+`clustered_row_norms.npy`.
 
 USearch and other ANN indexes are local evaluation candidates only. Do not
 upload an ANN artifact or add `usearch` to the production image unless a larger
@@ -43,9 +46,10 @@ evaluation shows that it fits the reviewed volume budget and preserves recall.
 The first local 50k USearch f16 candidate was fast but projected to about
 2.75GB for 3M vectors by itself, before SQLite and the existing int8 mmap files.
 
-The deployed 3M artifact uses about 2.4GB on the Fly volume after the SQLite
-status count index is added, so the current reviewed size is 4GB. A larger
-backfill requires an explicit volume-size review before upload.
+The deployed clustered 3M artifact is about 3.70GB including SQLite, base int8
+mmap arrays, and clustered IVF arrays, so the current reviewed size is 4GB with
+limited headroom. A larger backfill requires an explicit volume-size review
+before upload.
 
 Before any larger upload, run:
 
@@ -53,7 +57,7 @@ Before any larger upload, run:
 .\.venv\Scripts\python.exe scripts\preflight_artifacts.py `
   --db-path data\paper_recommender_1m.db `
   --index-path data\vectors_1m_int8_mmap `
-  --index-kind int8_mmap `
+  --index-kind ivf_int8_mmap `
   --min-indexed-papers 3000000 `
   --target-indexed-papers 3000000 `
   --max-volume-gb 4
@@ -82,16 +86,39 @@ records, and rebuilds the serving artifact only when vectors changed:
 ```
 
 Increase `--target-vector-count` in controlled steps, for example 1.01M, 1.1M,
-then larger windows after timing is known. After a successful local sync, run
-the artifact preflight before uploading the updated SQLite database and mmap
-directory to Fly. This keeps production cheap: the deployed app serves files
-and does not need GPU, background workers, or a managed vector database.
+then larger windows after timing is known. After a successful local sync, rebuild
+the IVF cluster files and run artifact preflight before uploading the updated
+SQLite database and mmap directory to Fly. This keeps production cheap: the
+deployed app serves files and does not need GPU, background workers, or a
+managed vector database.
 
 The first small catch-up smoke run used target 1,000,050, processed 987 OAI
 records from `2016-01-27`, embedded 50 new records on CUDA, and passed preflight
 with a 3M projection still below the reviewed 4GB artifact budget. The completed
 local 3M catch-up later reached 3,000,000 indexed papers, advanced the OAI cursor
-to `2026-04-23`, and passed preflight with 2,469,075,200 total artifact bytes.
+to `2026-04-23`, and passed preflight with 2,469,075,200 total artifact bytes
+before adding clustered IVF arrays. The clustered IVF preflight later measured
+3,702,979,208 total artifact bytes under the same 4GB review limit.
+
+After the 3M catch-up, build IVF cluster files:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\build_ivf_int8_index.py `
+  --index-path data\vectors_1m_int8_mmap `
+  --n-clusters 512 `
+  --train-sample-size 100000 `
+  --iterations 6
+```
+
+Then evaluate:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\evaluate_ivf_int8_index.py `
+  --index-path data\vectors_1m_int8_mmap `
+  --top-k 10 `
+  --sample-size 50 `
+  --nprobe 32
+```
 
 ## Safe Preparation
 
@@ -183,6 +210,14 @@ cat /app/data/upload_3m_chunks/part_* | tar -xzf - -C /app/data
 CREATE INDEX IF NOT EXISTS idx_papers_status_count ON papers(active, vector_id);
 ```
 
+For an IVF update, upload only the new `centroids.npy` and `cluster_ids.npy`
+files into `/app/data/vectors_1m_int8_mmap/` if only centroids changed. If the
+base mmap arrays changed, regenerate or upload all clustered IVF files:
+`cluster_offsets.npy`, `clustered_vector_ids.npy`, `clustered_codes.npy`, and
+`clustered_row_norms.npy`. For large full-corpus updates, generating the
+clustered mmap arrays directly on the Fly volume can avoid a very slow SFTP
+upload of `clustered_codes.npy`.
+
 ## Verification
 
 Use the deployment smoke test against the Fly URL:
@@ -191,7 +226,7 @@ Use the deployment smoke test against the Fly URL:
 .\.venv\Scripts\python.exe scripts\smoke_deployment.py `
   --base-url https://paper-recommender-72yh.fly.dev `
   --query-url https://arxiv.org/abs/0704.0004 `
-  --expected-index-kind int8_mmap `
+  --expected-index-kind ivf_int8_mmap `
   --min-indexed-papers 3000000 `
   --timeout-seconds 180
 ```
@@ -203,12 +238,12 @@ fly dashboard --app paper-recommender-72yh
 ```
 
 The first recommendation requests can load the index from the mounted volume.
-For the 3M `int8_mmap` deployment, exact scan is correct but slow on the current
-1GB `shared-cpu-1x` Machine: measured filtered and unfiltered requests were about
-60-70s. The app protects the first load with an index-load lock, and the UI
-disables duplicate submits while a search is running. Treat this deployment as a
-correctness baseline; a production-quality UX needs either a runtime/cache
-benchmark or a compact ANN index that stays inside the reviewed storage budget.
+The 3M exact `int8_mmap` baseline was correct but slow on the current 1GB
+`shared-cpu-1x` Machine: measured filtered and unfiltered requests were about
+60-70s. The deployed clustered `ivf_int8_mmap` path reduced an unfiltered
+`0704.0004` production recommendation to 0.572s. The same query filtered to
+`cs.CL + cs.LG` took 8.405s, so category-filtered latency remains the next
+serving optimization target.
 
 ## Cleanup
 

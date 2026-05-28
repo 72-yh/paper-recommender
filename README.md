@@ -73,6 +73,29 @@ optimizing cold-start load behavior on a low-memory server:
   --overwrite
 ```
 
+Build the IVF cluster files on top of the existing `int8_mmap` directory when
+optimizing 3M serving latency without adding a managed vector service. This
+keeps int8 quantization and writes clustered mmap arrays for contiguous cluster
+reads:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\build_ivf_int8_index.py `
+  --index-path data\vectors_1m_int8_mmap `
+  --n-clusters 512 `
+  --train-sample-size 100000 `
+  --iterations 6
+```
+
+Then evaluate recall and latency against exact `int8_mmap` search:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\evaluate_ivf_int8_index.py `
+  --index-path data\vectors_1m_int8_mmap `
+  --top-k 10 `
+  --sample-size 50 `
+  --nprobe 32
+```
+
 Serve the 1M int8 index locally:
 
 ```powershell
@@ -118,7 +141,7 @@ Validate the mounted artifacts before starting or shipping the container:
 .\.venv\Scripts\python.exe scripts\preflight_artifacts.py `
   --db-path data/paper_recommender_1m.db `
   --index-path data/vectors_1m_int8_mmap `
-  --index-kind int8_mmap `
+  --index-kind ivf_int8_mmap `
   --min-indexed-papers 3000000
 ```
 
@@ -131,7 +154,7 @@ Smoke-test a running deployment:
 .\.venv\Scripts\python.exe scripts\smoke_deployment.py `
   --base-url http://127.0.0.1:8000 `
   --query-url https://arxiv.org/abs/0704.0004 `
-  --expected-index-kind int8_mmap `
+  --expected-index-kind ivf_int8_mmap `
   --min-indexed-papers 3000000 `
   --timeout-seconds 180
 ```
@@ -157,10 +180,18 @@ PAPER_RECOMMENDER_INDEX_PATH=/app/data/vectors_1m_int8_mmap
 PAPER_RECOMMENDER_INDEX_KIND=int8_mmap
 ```
 
+After IVF cluster files are present in the same directory, use:
+
+```text
+PAPER_RECOMMENDER_INDEX_PATH=/app/data/vectors_1m_int8_mmap
+PAPER_RECOMMENDER_INDEX_KIND=ivf_int8_mmap
+```
+
 For a low-cost server, copy or attach the DB plus the selected vector artifact to
 the same paths, then run the same image. Do not bake the DB or vector index into
-the image; the current deployed 3M `int8_mmap` artifact is about 1.2GB and is
-served from the mounted volume.
+the image; the current deployed 3M `ivf_int8_mmap` artifact keeps the base
+`int8_mmap` vectors and adds clustered int8 mmap files for faster reads on the
+small Fly volume.
 
 Daily serving-index sync after a full current backfill:
 

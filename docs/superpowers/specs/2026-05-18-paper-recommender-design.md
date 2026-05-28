@@ -56,15 +56,24 @@ Current MVP state:
 
 - The deployed index contains 3,000,000 active indexed papers up to OAI
   datestamp `2026-04-23`.
-- The serving index is scalar-quantized int8 and searched with a NumPy implementation.
-- Unfiltered requests use a full vector scan. Category and date filters first build candidate `vector_id`s from indexed SQLite lookup tables, then score only that filtered vector subset.
+- The serving index is scalar-quantized int8 and searched with a NumPy
+  implementation.
+- The current ANN improvement path is deployed as `ivf_int8_mmap`: use IVF
+  cluster files to pick nearby vector clusters, then re-rank candidates with the
+  same int8 cosine scoring. The deployed version also stores clustered int8 mmap
+  arrays so Fly reads contiguous cluster slices instead of scattered rows.
+  Category and date filters first build candidate `vector_id`s from indexed
+  SQLite lookup tables, then intersect those candidates with nearby IVF clusters
+  before re-ranking.
 - FAISS and USearch are not deployed in the current MVP. USearch has a local
   evaluation harness, but it should not replace the current search path until
   full-corpus storage impact, memory usage, and recall are acceptable.
-- The current 3M exact-scan path is correct but too slow on the cheapest Fly
-  runtime: measured production recommendations were about 60-70s on
-  `shared-cpu-1x`, 1GB RAM. The app uses a process-local load lock so concurrent
-  first requests do not duplicate index loading.
+- The 3M exact-scan path was correct but too slow on the cheapest Fly runtime:
+  measured production recommendations were about 60-70s on `shared-cpu-1x`,
+  1GB RAM. Clustered `ivf_int8_mmap` keeps recall@10 near the exact int8
+  baseline and reduced an unfiltered production recommendation for `0704.0004`
+  to 0.572s. Filtered category search remains slower and is the next serving
+  optimization target.
 
 ### OAI-PMH Ingestion
 
@@ -223,7 +232,7 @@ The full title and abstract for every paper should not be stored for display in 
 4. Reject missing, inactive, or vectorless records with a clear English error.
 5. Retrieve the query vector from the local index.
 6. When category or date filters are present, prefilter candidate `vector_id`s in SQLite.
-7. Run vector search. The current MVP uses NumPy full-scan for unfiltered requests and NumPy subset scoring for filtered requests; an ANN index is evaluated as an optional future replacement.
+7. Run vector search. The current MVP targets `ivf_int8_mmap`: nearby IVF clusters are selected first, then the same int8 NumPy scoring re-ranks candidate vectors. Earlier `int8_mmap` serving used NumPy full-scan for unfiltered requests and NumPy subset scoring to score only that filtered vector subset for filtered requests.
 8. Exclude the query paper itself.
 9. Exclude inactive or deleted papers.
 10. Apply optional category and date filters. Multiple selected categories use OR semantics.

@@ -133,7 +133,7 @@ def _require_file(path: Path, label: str) -> None:
 
 
 def _require_index_path(path: Path, index_kind: str) -> None:
-    if index_kind == "int8_mmap":
+    if index_kind in {"int8_mmap", "ivf_int8_mmap"}:
         if not path.exists():
             raise ArtifactPreflightError(f"Index directory does not exist: {path}")
         if not path.is_dir():
@@ -173,8 +173,8 @@ def _inspect_db(
 
 
 def _inspect_index(path: Path, *, index_kind: str) -> _IndexInfo:
-    if index_kind == "int8_mmap":
-        return _inspect_int8_mmap_index(path)
+    if index_kind in {"int8_mmap", "ivf_int8_mmap"}:
+        return _inspect_int8_mmap_index(path, require_ivf=index_kind == "ivf_int8_mmap")
     try:
         with np.load(path) as data:
             if index_kind == "exact":
@@ -213,7 +213,7 @@ def _inspect_index(path: Path, *, index_kind: str) -> _IndexInfo:
         raise ArtifactPreflightError(f"Could not read index {path}: {exc}") from exc
 
 
-def _inspect_int8_mmap_index(path: Path) -> _IndexInfo:
+def _inspect_int8_mmap_index(path: Path, *, require_ivf: bool = False) -> _IndexInfo:
     try:
         vector_ids = np.load(path / "vector_ids.npy", mmap_mode="r")
         matrix = np.load(path / "codes.npy", mmap_mode="r")
@@ -232,6 +232,48 @@ def _inspect_int8_mmap_index(path: Path) -> _IndexInfo:
             raise ArtifactPreflightError(f"Index scales shape does not match codes in {path}")
         if row_norms.ndim != 1 or row_norms.shape[0] != matrix.shape[0]:
             raise ArtifactPreflightError(f"Index row_norms shape does not match codes in {path}")
+        if require_ivf:
+            cluster_ids = np.load(path / "cluster_ids.npy", mmap_mode="r")
+            centroids = np.load(path / "centroids.npy", mmap_mode="r")
+            cluster_offsets = np.load(path / "cluster_offsets.npy", mmap_mode="r")
+            clustered_vector_ids = np.load(path / "clustered_vector_ids.npy", mmap_mode="r")
+            clustered_codes = np.load(path / "clustered_codes.npy", mmap_mode="r")
+            clustered_row_norms = np.load(path / "clustered_row_norms.npy", mmap_mode="r")
+            if cluster_ids.ndim != 1 or cluster_ids.shape[0] != matrix.shape[0]:
+                raise ArtifactPreflightError(
+                    f"Index cluster_ids shape does not match codes in {path}"
+                )
+            _require_matrix(centroids, "centroids", path)
+            if centroids.shape[1] != matrix.shape[1]:
+                raise ArtifactPreflightError(
+                    f"Index centroids shape does not match codes in {path}"
+                )
+            if np.max(cluster_ids, initial=0) >= centroids.shape[0]:
+                raise ArtifactPreflightError(f"Index cluster_ids exceed centroid count in {path}")
+            if cluster_offsets.ndim != 1 or cluster_offsets.shape[0] != centroids.shape[0] + 1:
+                raise ArtifactPreflightError(
+                    f"Index cluster_offsets length does not match centroids in {path}"
+                )
+            if cluster_offsets[0] != 0 or cluster_offsets[-1] != matrix.shape[0]:
+                raise ArtifactPreflightError(f"Index cluster_offsets do not span rows in {path}")
+            if np.any(np.diff(cluster_offsets) < 0):
+                raise ArtifactPreflightError(f"Index cluster_offsets must be non-decreasing in {path}")
+            if clustered_vector_ids.ndim != 1 or clustered_vector_ids.shape[0] != matrix.shape[0]:
+                raise ArtifactPreflightError(
+                    f"Index clustered_vector_ids shape does not match codes in {path}"
+                )
+            if clustered_codes.shape != matrix.shape or clustered_codes.dtype != np.int8:
+                raise ArtifactPreflightError(
+                    f"Index clustered_codes shape or dtype does not match codes in {path}"
+                )
+            if clustered_row_norms.ndim != 1 or clustered_row_norms.shape[0] != matrix.shape[0]:
+                raise ArtifactPreflightError(
+                    f"Index clustered_row_norms shape does not match codes in {path}"
+                )
+            if not np.array_equal(np.sort(clustered_vector_ids), np.sort(vector_ids)):
+                raise ArtifactPreflightError(
+                    f"Index clustered_vector_ids do not match vector_ids in {path}"
+                )
         return _IndexInfo(
             vectors=int(matrix.shape[0]),
             dimensions=int(matrix.shape[1]),
@@ -358,7 +400,11 @@ def main() -> None:
     )
     parser.add_argument("--db-path", type=Path, default=Path("data/paper_recommender_1m.db"))
     parser.add_argument("--index-path", type=Path, default=Path("data/vectors_1m_int8.npz"))
-    parser.add_argument("--index-kind", choices=("exact", "int8", "int8_mmap"), default="int8")
+    parser.add_argument(
+        "--index-kind",
+        choices=("exact", "int8", "int8_mmap", "ivf_int8_mmap"),
+        default="int8",
+    )
     parser.add_argument("--min-indexed-papers", type=int, default=1)
     parser.add_argument("--skip-vector-id-check", action="store_true")
     parser.add_argument("--skip-category-lookup-check", action="store_true")
