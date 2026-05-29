@@ -265,3 +265,25 @@ and passed preflight with `total_artifact_bytes=3702979208`. A real OAI smoke
 run with `--max-records 50` processed 50 unchanged records at datestamp
 `2026-04-23`, embedded 0 papers, deleted 0 papers, rebuilt no serving or IVF
 artifacts, and passed preflight with `total_artifact_bytes=3702983304`.
+
+### Task 15: Full Local Daily Catch-Up
+
+**Status:** Completed.
+
+**Goal:** Run the daily update wrapper without record limits on the local build
+machine and verify that the updated artifact still fits the reviewed low-cost
+storage target before any Fly upload.
+
+- [x] Run unrestricted `scripts/run_daily_update.py` locally with CUDA.
+- [x] Rebuild `int8_mmap` and `ivf_int8_mmap` after vector changes.
+- [x] Run artifact preflight against the 4GB target.
+- [x] Smoke test the updated local API path with `ivf_int8_mmap`.
+- [x] Keep Fly upload and deployment out of this task.
+
+**Full daily result:** The run processed 61,303 OAI records, embedded 59,426
+papers, deleted 0 papers, advanced the local cursor to `2026-05-29`, and reached
+3,058,361 indexed papers. Preflight passed with
+`total_artifact_bytes=3775515858`, `index_kind=ivf_int8_mmap`, and category
+lookup rows 5,279,691. Compression report `daily-full-20260529` measured
+recall@10 0.9910 across 200 sampled queries. A local FastAPI smoke test returned
+HTTP 200 with 10 filtered recommendation results for `0704.0004`.

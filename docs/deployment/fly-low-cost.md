@@ -103,6 +103,13 @@ to `2026-04-23`, and passed preflight with 2,469,075,200 total artifact bytes
 before adding clustered IVF arrays. The clustered IVF preflight later measured
 3,702,979,208 total artifact bytes under the same 4GB review limit.
 
+The first unrestricted local daily update after the 3M deployment processed
+61,303 OAI records, embedded 59,426 papers, advanced the local cursor to
+`2026-05-29`, rebuilt `ivf_int8_mmap`, and passed preflight with 3,058,361
+indexed papers and 3,775,515,858 total artifact bytes. This still fits the 4GB
+volume, but with limited headroom. Review the volume budget before uploading
+larger future daily updates.
+
 The daily wrapper runs the following IVF build automatically when vectors
 changed. Run it manually only when rebuilding IVF outside the daily flow:
 

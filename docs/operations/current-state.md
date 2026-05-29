@@ -1,6 +1,6 @@
 # Current Operational State
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 ## Deployment
 
@@ -18,6 +18,8 @@ No managed database, Redis, object store, GPU, extra Machine, extra region, or d
 
 - Current deployment artifact: 3,000,000 indexed papers after real OAI catch-up
   from `2016-01-27` to `2026-04-23`
+- Current local artifact after daily update: 3,058,361 indexed papers up to OAI
+  datestamp `2026-05-29`. This has not been uploaded to Fly yet.
 - SQLite database: `paper_recommender_1m.db`, about 1.3GB on the Fly volume after
   the 3M catch-up, `paper_categories` lookup growth, and status count index
 - Vector index: `vectors_1m_int8_mmap/`, about 2.38GB after adding clustered
@@ -171,13 +173,24 @@ Use it to grow from 1M in measured chunks while preserving OAI datestamp order.
   preflight with `total_artifact_bytes=3702983304`. The exact vector and serving
   artifact timestamps stayed unchanged, confirming unchanged daily records do
   not rewrite large vector artifacts.
+- Local full daily update: running `scripts/run_daily_update.py` without
+  `--max-records` processed 61,303 OAI records, embedded 59,426 papers, deleted
+  0 papers, advanced the local cursor to `2026-05-29`, rebuilt `int8_mmap` and
+  `ivf_int8_mmap`, and passed preflight with 3,058,361 indexed papers and
+  `total_artifact_bytes=3775515858`. The compression report
+  `daily-full-20260529` measured recall@10 0.9910 across 200 sampled queries.
+- Local API smoke after the full daily update: FastAPI `TestClient` returned
+  `/api/status` with 3,058,361 indexed papers, `last_oai_datestamp=2026-05-29`,
+  and `index_kind=ivf_int8_mmap`; `/api/recommend` for `0704.0004` filtered to
+  `cs.CL + cs.LG` returned HTTP 200 with 10 results.
 
 The cold-start number includes Machine auto-start and first index load. Warm recommendation is the more relevant number for repeated use after the process has loaded the index.
 
 ## Known Limits
 
 - The deployed app covers 3M papers up to OAI datestamp `2026-04-23` and now
-  uses clustered `ivf_int8_mmap` in production.
+  uses clustered `ivf_int8_mmap` in production. The local artifact is newer
+  than production after the 2026-05-29 daily update.
 - The web UI always requests 10 recommendations and does not expose a Top K control.
 - The web UI exposes a searchable multi-select category filter. Production `/api/categories` returned 168 categories in 2.032s on first call after the deployment, and multi-category recommendation filtering returned HTTP 200.
 - First request after an idle stop can be slow.
@@ -190,6 +203,7 @@ The cold-start number includes Machine auto-start and first index load. Warm rec
 
 ## Next Step
 
-Run the first reviewed daily local update after the next OAI window, inspect
-preflight output, then document the explicit upload/deploy procedure for changed
-artifacts.
+Review whether to upload the 3,058,361-paper local artifact to Fly. It still
+fits the reviewed 4GB volume, but only with limited headroom, so use the
+explicit chunked or in-volume update procedure and check billing before and
+after any Fly session.

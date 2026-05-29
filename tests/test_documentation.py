@@ -55,11 +55,16 @@ def test_real_oai_plan_tracks_current_followup_tasks() -> None:
     assert "Production clustered IVF result" in plan
     assert "Task 13: Filtered IVF Candidate Lookup" in plan
     assert "Task 14: Daily Local Update Orchestration" in plan
+    assert "Task 15: Full Local Daily Catch-Up" in plan
     assert "scripts/run_daily_update.py" in plan
     assert "production mutations remain manual and reviewed" in plan
     assert "Daily smoke result" in plan
     assert "`--max-records 50` processed 50 unchanged records" in plan
+    assert "processed 61,303 OAI records" in plan
+    assert "3,058,361 indexed papers" in plan
+    assert "daily-full-20260529" in plan
     assert "3702979208" in plan
+    assert "3775515858" in plan
     assert "0.572s" in plan
     assert "1.880s" in plan
     assert "1,000,050" in plan
@@ -85,6 +90,9 @@ def test_fly_runbook_documents_current_operational_lessons() -> None:
     assert "first small catch-up smoke run used target 1,000,050" in runbook
     assert "local 3M catch-up later reached 3,000,000 indexed papers" in runbook
     assert "2,469,075,200 total artifact bytes" in runbook
+    assert "first unrestricted local daily update" in runbook
+    assert "3,058,361" in runbook
+    assert "3,775,515,858 total artifact bytes" in runbook
     assert "Run daily OAI updates on a local build machine" in runbook
     assert "Machine may auto-stop during long SFTP uploads" in runbook
     assert "chunked archive transfer" in runbook
@@ -142,5 +150,14 @@ def test_current_state_doc_records_faiss_and_latency_status() -> None:
     assert "processed 50 unchanged OAI records" in current_state
     assert "do" in current_state
     assert "not rewrite large vector artifacts" in current_state
+    assert "Current local artifact after daily update" in current_state
+    assert "Local full daily update" in current_state
+    assert "processed 61,303 OAI records" in current_state
+    assert "3,058,361 indexed papers" in current_state
+    assert "daily-full-20260529" in current_state
+    assert "0.9910" in current_state
+    assert "Local API smoke after the full daily update" in current_state
+    assert "newer" in current_state
+    assert "than production" in current_state
     assert "Cold start" in current_state
     assert "Warm recommendation" in current_state
